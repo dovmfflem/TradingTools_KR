@@ -9,6 +9,13 @@ bithumb_secret_key: "YOUR_BITHUMB_SECRET_KEY"
 upbit_api_key: "YOUR_UPBIT_API_KEY"
 upbit_secret_key: "YOUR_UPBIT_SECRET_KEY"
 
+# Optional Upbit Pocket/Subpocket helpers.
+# Pocket APIs can use a separate Upbit Pocket API key.
+upbit_pocket_api_key: "YOUR_UPBIT_POCKET_API_KEY"
+upbit_pocket_secret_key: "YOUR_UPBIT_POCKET_SECRET_KEY"
+upbit_main_pocket_uuid: "YOUR_UPBIT_MAIN_POCKET_UUID"
+upbit_subpocket_uuid: "YOUR_UPBIT_SUBPOCKET_UUID"
+
 # Coinone
 coinone_access_token: "YOUR_COINONE_ACCESS_TOKEN"
 coinone_secret_key: "YOUR_COINONE_SECRET_KEY"

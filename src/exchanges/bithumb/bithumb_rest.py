@@ -134,6 +134,12 @@ class BithumbRest:
             filtered[key] = value
         return urlencode(filtered, doseq=True)
 
+    @staticmethod
+    def _filter_none(payload: dict[str, Any] | None) -> dict[str, Any]:
+        if not payload:
+            return {}
+        return {key: value for key, value in payload.items() if value is not None}
+
     def _auth_headers(
         self,
         *,
@@ -170,13 +176,15 @@ class BithumbRest:
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
     ) -> Any:
+        clean_params = self._filter_none(params)
+        clean_json_body = self._filter_none(json_body)
         url = f"{self.api_url}{path}"
         response = self._session.request(
             method=method,
             url=url,
-            headers=self._auth_headers(params=params, json_body=json_body),
-            params=params,
-            json=json_body,
+            headers=self._auth_headers(params=clean_params, json_body=clean_json_body),
+            params=clean_params or None,
+            json=clean_json_body or None,
             timeout=self.timeout_seconds,
         )
 
@@ -192,13 +200,20 @@ class BithumbRest:
 
         return payload
 
-    def get_orderbook(self, ticker: str) -> dict[str, Any]:
-        market = _to_market_code(ticker)
-        url = f"{self.api_url}/v1/orderbook"
-        response = self._session.get(
-            url,
-            params={"markets": market},
+    def _public_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+    ) -> Any:
+        clean_params = self._filter_none(params)
+        url = f"{self.api_url}{path}"
+        response = self._session.request(
+            method=method,
+            url=url,
             headers={"accept": "application/json"},
+            params=clean_params or None,
             timeout=self.timeout_seconds,
         )
 
@@ -209,9 +224,152 @@ class BithumbRest:
 
         if not response.ok:
             raise BithumbRestError(
-                f"GET /v1/orderbook failed (status={response.status_code}): {payload}"
+                f"{method} {path} failed (status={response.status_code}): {payload}"
             )
 
+        return payload
+
+    @staticmethod
+    def _market_list(tickers: list[str] | tuple[str, ...] | str) -> str:
+        values = [tickers] if isinstance(tickers, str) else list(tickers)
+        if not values:
+            raise ValueError("tickers is required")
+        return ",".join(_to_market_code(ticker) for ticker in values)
+
+    @staticmethod
+    def _array(values: list[str] | tuple[str, ...] | None) -> list[str] | None:
+        return list(values) if values is not None else None
+
+    def list_trading_pairs(self, *, is_details: bool = False) -> list[dict[str, Any]]:
+        data = self._public_request(
+            "GET",
+            "/v1/market/all",
+            params={"isDetails": "true" if is_details else "false"},
+        )
+        return data if isinstance(data, list) else []
+
+    def get_minute_candles(
+        self,
+        ticker: str,
+        *,
+        unit: int = 1,
+        to: str | None = None,
+        count: int = 200,
+    ) -> list[dict[str, Any]]:
+        if unit not in {1, 3, 5, 10, 15, 30, 60, 240}:
+            raise ValueError("unit must be one of: 1, 3, 5, 10, 15, 30, 60, 240")
+        data = self._public_request(
+            "GET",
+            f"/v1/candles/minutes/{unit}",
+            params={"market": _to_market_code(ticker), "to": to, "count": count},
+        )
+        return data if isinstance(data, list) else []
+
+    def get_day_candles(
+        self,
+        ticker: str,
+        *,
+        to: str | None = None,
+        count: int = 200,
+        converting_price_unit: str | None = None,
+    ) -> list[dict[str, Any]]:
+        data = self._public_request(
+            "GET",
+            "/v1/candles/days",
+            params={
+                "market": _to_market_code(ticker),
+                "to": to,
+                "count": count,
+                "convertingPriceUnit": converting_price_unit,
+            },
+        )
+        return data if isinstance(data, list) else []
+
+    def get_week_candles(
+        self,
+        ticker: str,
+        *,
+        to: str | None = None,
+        count: int = 200,
+    ) -> list[dict[str, Any]]:
+        data = self._public_request(
+            "GET",
+            "/v1/candles/weeks",
+            params={"market": _to_market_code(ticker), "to": to, "count": count},
+        )
+        return data if isinstance(data, list) else []
+
+    def get_month_candles(
+        self,
+        ticker: str,
+        *,
+        to: str | None = None,
+        count: int = 200,
+    ) -> list[dict[str, Any]]:
+        data = self._public_request(
+            "GET",
+            "/v1/candles/months",
+            params={"market": _to_market_code(ticker), "to": to, "count": count},
+        )
+        return data if isinstance(data, list) else []
+
+    def get_trades(
+        self,
+        ticker: str,
+        *,
+        to: str | None = None,
+        count: int = 200,
+        cursor: str | None = None,
+        days_ago: int | None = None,
+    ) -> list[dict[str, Any]]:
+        data = self._public_request(
+            "GET",
+            "/v1/trades/ticks",
+            params={
+                "market": _to_market_code(ticker),
+                "to": to,
+                "count": count,
+                "cursor": cursor,
+                "daysAgo": days_ago,
+            },
+        )
+        return data if isinstance(data, list) else []
+
+    def get_ticker(self, tickers: list[str] | tuple[str, ...] | str) -> list[dict[str, Any]]:
+        data = self._public_request(
+            "GET",
+            "/v1/ticker",
+            params={"markets": self._market_list(tickers)},
+        )
+        return data if isinstance(data, list) else []
+
+    def list_warning_markets(self) -> Any:
+        return self._public_request("GET", "/v1/market/virtual_asset_warning")
+
+    def list_notices(
+        self,
+        *,
+        page: int | None = None,
+        count: int | None = None,
+    ) -> Any:
+        return self._public_request(
+            "GET",
+            "/v1/notices",
+            params={"page": page, "count": count},
+        )
+
+    def list_deposit_withdraw_fees(self, *, currency: str = "ALL") -> Any:
+        return self._public_request(
+            "GET",
+            f"/v2/fee/inout/{currency.upper()}",
+        )
+
+    def get_orderbook(self, ticker: str) -> dict[str, Any]:
+        payload = self._public_request(
+            "GET",
+            "/v1/orderbook",
+            params={"markets": _to_market_code(ticker)},
+        )
         if isinstance(payload, list) and payload:
             first = payload[0]
             return first if isinstance(first, dict) else {"data": payload}
@@ -266,35 +424,58 @@ class BithumbRest:
             "updated_at": time.time(),
         }
 
-    def get_order(self, uuid_value: str) -> dict[str, Any]:
-        if not uuid_value:
-            raise ValueError("uuid is required")
-        data = self._request("GET", "/v1/order", params={"uuid": uuid_value})
+    def get_order(
+        self,
+        uuid_value: str | None = None,
+        *,
+        client_order_id: str | None = None,
+    ) -> dict[str, Any]:
+        if not uuid_value and not client_order_id:
+            raise ValueError("uuid_value or client_order_id is required")
+        data = self._request(
+            "GET",
+            "/v1/order",
+            params={"uuid": uuid_value, "client_order_id": client_order_id},
+        )
+        return data if isinstance(data, dict) else {"data": data}
+
+    def get_order_chance(self, ticker: str) -> dict[str, Any]:
+        data = self._request(
+            "GET",
+            "/v1/orders/chance",
+            params={"market": _to_market_code(ticker)},
+        )
         return data if isinstance(data, dict) else {"data": data}
 
     def list_orders(
         self,
         *,
-        ticker: str,
-        state: str = "wait",
+        ticker: str | None = None,
+        state: str | None = None,
+        states: list[str] | tuple[str, ...] | None = None,
+        uuids: list[str] | tuple[str, ...] | None = None,
+        client_order_ids: list[str] | tuple[str, ...] | None = None,
         side: str | None = None,
-        limit: int = 100,
-        page: int = 1,
+        limit: int | None = None,
+        page: int | None = None,
+        order_by: str | None = None,
     ) -> list[dict[str, Any]]:
-        if limit <= 0:
+        if limit is not None and limit <= 0:
             raise ValueError("limit must be greater than 0")
-        if page <= 0:
+        if page is not None and page <= 0:
             raise ValueError("page must be greater than 0")
 
         params: dict[str, Any] = {
-            "market": _to_market_code(ticker),
+            "market": _to_market_code(ticker) if ticker else None,
             "state": state,
+            "states[]": self._array(states),
+            "uuids[]": self._array(uuids),
+            "client_order_ids[]": self._array(client_order_ids),
+            "side": side.lower() if side is not None else None,
             "limit": limit,
             "page": page,
-            "order_by": "desc",
+            "order_by": order_by,
         }
-        if side is not None:
-            params["side"] = side.lower()
 
         data = self._request("GET", "/v1/orders", params=params)
         if isinstance(data, list):
@@ -303,14 +484,9 @@ class BithumbRest:
             return [item for item in data["data"] if isinstance(item, dict)]
         return []
 
-    def get_open_orders(
-        self,
-        *,
-        ticker: str,
-        side: str | None = None,
-        limit: int = 100,
-    ) -> list[dict[str, Any]]:
-        return self.list_orders(ticker=ticker, state="wait", side=side, limit=limit)
+    def get_open_orders(self, **kwargs: Any) -> list[dict[str, Any]]:
+        kwargs.setdefault("state", "wait")
+        return self.list_orders(**kwargs)
 
     def place_order(
         self,
@@ -320,6 +496,7 @@ class BithumbRest:
         order_type: str,
         price: str | float | int | None = None,
         volume: str | float | int | None = None,
+        client_order_id: str | None = None,
     ) -> dict[str, Any]:
         side_lower = side.lower()
         order_type_lower = order_type.lower()
@@ -334,6 +511,7 @@ class BithumbRest:
             "market": market,
             "side": side_lower,
             "order_type": order_type_lower,
+            "client_order_id": client_order_id,
         }
 
         if price is not None:
@@ -358,11 +536,30 @@ class BithumbRest:
         data = self._request("POST", "/v2/orders", json_body=body)
         return data if isinstance(data, dict) else {"data": data}
 
-    def cancel_order(self, order_id: str) -> dict[str, Any]:
-        if not order_id:
-            raise ValueError("order_id is required")
-        data = self._request("DELETE", "/v2/order", params={"order_id": order_id})
+    def cancel_order(
+        self,
+        order_id: str | None = None,
+        *,
+        client_order_id: str | None = None,
+    ) -> dict[str, Any]:
+        if not order_id and not client_order_id:
+            raise ValueError("order_id or client_order_id is required")
+        data = self._request(
+            "DELETE",
+            "/v2/order",
+            params={"order_id": order_id, "client_order_id": client_order_id},
+        )
         return data if isinstance(data, dict) else {"data": data}
+
+    def place_orders(self, orders: list[dict[str, Any]]) -> Any:
+        if not orders:
+            raise ValueError("orders is required")
+        return self._request("POST", "/v2/orders", json_body={"orders": orders})
+
+    def cancel_orders(self, orders: list[dict[str, Any]]) -> Any:
+        if not orders:
+            raise ValueError("orders is required")
+        return self._request("DELETE", "/v2/orders", json_body={"orders": orders})
 
     def get_accounts(self) -> list[dict[str, Any]]:
         data = self._request("GET", "/v1/accounts")
@@ -371,6 +568,228 @@ class BithumbRest:
         if isinstance(data, dict) and isinstance(data.get("data"), list):
             return data["data"]
         return []
+
+    def list_api_keys(self) -> list[dict[str, Any]]:
+        data = self._request("GET", "/v1/api_keys")
+        return data if isinstance(data, list) else []
+
+    def list_wallet_statuses(self) -> Any:
+        return self._request("GET", "/v1/status/wallet")
+
+    def get_withdraw_chance(self, *, currency: str, net_type: str | None = None) -> dict[str, Any]:
+        data = self._request(
+            "GET",
+            "/v1/withdraws/chance",
+            params={"currency": currency, "net_type": net_type},
+        )
+        return data if isinstance(data, dict) else {"data": data}
+
+    def list_withdraw_addresses(
+        self,
+        *,
+        currency: str | None = None,
+        net_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        data = self._request(
+            "GET",
+            "/v1/withdraws/coin_addresses",
+            params={"currency": currency, "net_type": net_type},
+        )
+        return data if isinstance(data, list) else []
+
+    def get_withdraw(
+        self,
+        *,
+        uuid_value: str | None = None,
+        txid: str | None = None,
+        currency: str | None = None,
+    ) -> dict[str, Any]:
+        if not uuid_value and not txid:
+            raise ValueError("uuid_value or txid is required")
+        data = self._request(
+            "GET",
+            "/v1/withdraw",
+            params={"uuid": uuid_value, "txid": txid, "currency": currency},
+        )
+        return data if isinstance(data, dict) else {"data": data}
+
+    def list_coin_withdraws(
+        self,
+        *,
+        currency: str | None = None,
+        state: str | None = None,
+        uuids: list[str] | tuple[str, ...] | None = None,
+        txids: list[str] | tuple[str, ...] | None = None,
+        page: int | None = None,
+        limit: int | None = None,
+        order_by: str | None = None,
+    ) -> list[dict[str, Any]]:
+        data = self._request(
+            "GET",
+            "/v1/withdraws",
+            params={
+                "currency": currency,
+                "state": state,
+                "uuids[]": self._array(uuids),
+                "txids[]": self._array(txids),
+                "page": page,
+                "limit": limit,
+                "order_by": order_by,
+            },
+        )
+        return data if isinstance(data, list) else []
+
+    def list_krw_withdraws(
+        self,
+        *,
+        state: str | None = None,
+        page: int | None = None,
+        limit: int | None = None,
+        order_by: str | None = None,
+    ) -> list[dict[str, Any]]:
+        data = self._request(
+            "GET",
+            "/v1/withdraws/krw",
+            params={"state": state, "page": page, "limit": limit, "order_by": order_by},
+        )
+        return data if isinstance(data, list) else []
+
+    def create_coin_withdraw(
+        self,
+        *,
+        currency: str,
+        net_type: str,
+        amount: str | float | int,
+        address: str,
+        secondary_address: str | None = None,
+        transaction_type: str | None = None,
+    ) -> dict[str, Any]:
+        data = self._request(
+            "POST",
+            "/v1/withdraws/coin",
+            json_body={
+                "currency": currency,
+                "net_type": net_type,
+                "amount": str(amount),
+                "address": address,
+                "secondary_address": secondary_address,
+                "transaction_type": transaction_type,
+            },
+        )
+        return data if isinstance(data, dict) else {"data": data}
+
+    def create_krw_withdraw(
+        self,
+        *,
+        amount: str | float | int,
+        two_factor_type: str,
+    ) -> dict[str, Any]:
+        data = self._request(
+            "POST",
+            "/v1/withdraws/krw",
+            json_body={"amount": str(amount), "two_factor_type": two_factor_type},
+        )
+        return data if isinstance(data, dict) else {"data": data}
+
+    def cancel_coin_withdraw(self, *, uuid_value: str) -> dict[str, Any]:
+        if not uuid_value:
+            raise ValueError("uuid_value is required")
+        data = self._request("DELETE", "/v1/withdraws/coin", params={"uuid": uuid_value})
+        return data if isinstance(data, dict) else {"data": data}
+
+    def list_deposit_addresses(
+        self,
+        *,
+        currency: str | None = None,
+        net_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        data = self._request(
+            "GET",
+            "/v1/deposits/coin_addresses",
+            params={"currency": currency, "net_type": net_type},
+        )
+        return data if isinstance(data, list) else []
+
+    def get_deposit_address(self, *, currency: str, net_type: str | None = None) -> dict[str, Any]:
+        data = self._request(
+            "GET",
+            "/v1/deposits/coin_address",
+            params={"currency": currency, "net_type": net_type},
+        )
+        return data if isinstance(data, dict) else {"data": data}
+
+    def create_deposit_address(self, *, currency: str, net_type: str | None = None) -> dict[str, Any]:
+        data = self._request(
+            "POST",
+            "/v1/deposits/generate_coin_address",
+            json_body={"currency": currency, "net_type": net_type},
+        )
+        return data if isinstance(data, dict) else {"data": data}
+
+    def get_deposit(
+        self,
+        *,
+        uuid_value: str | None = None,
+        txid: str | None = None,
+        currency: str | None = None,
+    ) -> dict[str, Any]:
+        if not uuid_value and not txid:
+            raise ValueError("uuid_value or txid is required")
+        data = self._request(
+            "GET",
+            "/v1/deposit",
+            params={"uuid": uuid_value, "txid": txid, "currency": currency},
+        )
+        return data if isinstance(data, dict) else {"data": data}
+
+    def list_coin_deposits(
+        self,
+        *,
+        currency: str | None = None,
+        state: str | None = None,
+        uuids: list[str] | tuple[str, ...] | None = None,
+        txids: list[str] | tuple[str, ...] | None = None,
+        page: int | None = None,
+        limit: int | None = None,
+        order_by: str | None = None,
+    ) -> list[dict[str, Any]]:
+        data = self._request(
+            "GET",
+            "/v1/deposits",
+            params={
+                "currency": currency,
+                "state": state,
+                "uuids[]": self._array(uuids),
+                "txids[]": self._array(txids),
+                "page": page,
+                "limit": limit,
+                "order_by": order_by,
+            },
+        )
+        return data if isinstance(data, list) else []
+
+    def list_krw_deposits(
+        self,
+        *,
+        state: str | None = None,
+        page: int | None = None,
+        limit: int | None = None,
+        order_by: str | None = None,
+    ) -> list[dict[str, Any]]:
+        data = self._request(
+            "GET",
+            "/v1/deposits/krw",
+            params={"state": state, "page": page, "limit": limit, "order_by": order_by},
+        )
+        return data if isinstance(data, list) else []
+
+    def create_krw_deposit(self, *, amount: str | float | int) -> dict[str, Any]:
+        data = self._request(
+            "POST",
+            "/v1/deposits/krw",
+            json_body={"amount": str(amount)},
+        )
+        return data if isinstance(data, dict) else {"data": data}
 
 
 def tradeTest(client: BithumbRest, test_ticker: str = "usdt-krw") -> None:

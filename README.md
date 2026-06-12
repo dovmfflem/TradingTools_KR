@@ -48,6 +48,17 @@ messenger = TelegramMessenger.from_info_yaml_key("default", "info.yaml")
 messenger.send_message("TradingTools KR notification test")
 ```
 
+Run Upbit live API smoke tests with real credentials:
+
+```powershell
+python examples/upbit_live_test.py --private-read
+python examples/upbit_live_test.py --private-read --trade
+```
+
+The trade test uses `btc-krw`, checks the price before buy/sell, buys `6000` KRW
+with a market buy, checks the BTC balance before selling, then market-sells the
+bought BTC amount.
+
 ## Repository Hygiene
 
 The repository should contain source code, lightweight tests, and documentation only. Runtime artifacts such as `data/`, `logs/`, `*.db`, `*.sqlite3`, `*.csv`, `*.jsonl`, `.venv/`, and `info.yaml` are ignored.

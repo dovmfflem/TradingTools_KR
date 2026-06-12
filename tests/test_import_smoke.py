@@ -14,6 +14,7 @@ MODULES = [
     "src.exchanges.bithumb.bithumb_myOrder",
     "src.exchanges.upbit.upbit_rest",
     "src.exchanges.upbit.upbit_databank",
+    "src.exchanges.upbit.api_surface",
     "src.exchanges.binance.binance_spot_databank",
     "src.exchanges.binance.binance_futures_databank",
     "src.exchanges.binance.binance_futures_rest",

@@ -395,6 +395,226 @@ class UpbitDataBank:
             self.on_update(event)
 
 
+class UpbitPublicWebSocket:
+    WS_URL = "wss://api.upbit.com/websocket/v1"
+
+    def __init__(
+        self,
+        *,
+        url: str = WS_URL,
+        timeout_seconds: float = 10.0,
+        ping_interval_seconds: float = 30.0,
+        event_queue: queue.Queue[Mapping[str, object]] | None = None,
+        on_event: Callable[[Mapping[str, object]], None] | None = None,
+    ) -> None:
+        if websocket is None:
+            raise RuntimeError(
+                "websocket-client is required. install: pip install websocket-client"
+            )
+        self.url = url
+        self.timeout_seconds = timeout_seconds
+        self.ping_interval_seconds = ping_interval_seconds
+        self.event_queue = event_queue
+        self.on_event = on_event
+
+        self._ws: Any | None = None
+        self._listen_thread: threading.Thread | None = None
+        self._ping_thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
+        self._send_lock = threading.Lock()
+
+    def connect(self) -> None:
+        if self._ws is not None:
+            return
+        if websocket is None:
+            raise RuntimeError(
+                "websocket-client is required. install: pip install websocket-client"
+            )
+
+        self._stop_event.clear()
+        self._ws = websocket.create_connection(self.url, timeout=self.timeout_seconds)
+        self._start_ping_loop()
+
+    def _start_ping_loop(self) -> None:
+        if self._ping_thread is not None and self._ping_thread.is_alive():
+            return
+
+        def _loop() -> None:
+            while not self._stop_event.wait(self.ping_interval_seconds):
+                if self._ws is None:
+                    break
+                try:
+                    self._ws.ping("keepalive")
+                except Exception:
+                    break
+
+        self._ping_thread = threading.Thread(target=_loop, daemon=True)
+        self._ping_thread.start()
+
+    def close(self) -> None:
+        self._stop_event.set()
+
+        if self._listen_thread is not None and self._listen_thread.is_alive():
+            self._listen_thread.join(timeout=2.0)
+        if self._ping_thread is not None and self._ping_thread.is_alive():
+            self._ping_thread.join(timeout=2.0)
+
+        if self._ws is not None:
+            try:
+                self._ws.close()
+            except Exception:
+                pass
+            self._ws = None
+
+    def send_request(
+        self,
+        request_types: list[dict[str, Any]],
+        *,
+        ticket: str | None = None,
+        format_type: str = "DEFAULT",
+    ) -> None:
+        if self._ws is None:
+            raise RuntimeError("websocket is not connected")
+
+        body: list[dict[str, Any]] = [{"ticket": ticket or f"upbit-public-{uuid.uuid4()}"}]
+        body.extend(request_types)
+        if format_type:
+            body.append({"format": format_type})
+
+        with self._send_lock:
+            self._ws.send(json.dumps(body))
+
+    def subscribe_orderbook(
+        self,
+        tickers: list[str],
+        *,
+        level: int | None = None,
+        format_type: str = "DEFAULT",
+    ) -> None:
+        req: dict[str, Any] = {
+            "type": "orderbook",
+            "codes": [_to_upbit_market_code(ticker) for ticker in tickers],
+        }
+        if level is not None:
+            req["level"] = level
+        self.send_request([req], format_type=format_type)
+
+    def subscribe_ticker(
+        self,
+        tickers: list[str],
+        *,
+        is_only_snapshot: bool | None = None,
+        is_only_realtime: bool | None = None,
+        format_type: str = "DEFAULT",
+    ) -> None:
+        req: dict[str, Any] = {
+            "type": "ticker",
+            "codes": [_to_upbit_market_code(ticker) for ticker in tickers],
+        }
+        if is_only_snapshot is not None:
+            req["is_only_snapshot"] = is_only_snapshot
+        if is_only_realtime is not None:
+            req["is_only_realtime"] = is_only_realtime
+        self.send_request([req], format_type=format_type)
+
+    def subscribe_trade(
+        self,
+        tickers: list[str],
+        *,
+        is_only_snapshot: bool | None = None,
+        is_only_realtime: bool | None = None,
+        format_type: str = "DEFAULT",
+    ) -> None:
+        req: dict[str, Any] = {
+            "type": "trade",
+            "codes": [_to_upbit_market_code(ticker) for ticker in tickers],
+        }
+        if is_only_snapshot is not None:
+            req["is_only_snapshot"] = is_only_snapshot
+        if is_only_realtime is not None:
+            req["is_only_realtime"] = is_only_realtime
+        self.send_request([req], format_type=format_type)
+
+    def subscribe_candle(
+        self,
+        tickers: list[str],
+        *,
+        interval: str = "1m",
+        format_type: str = "DEFAULT",
+    ) -> None:
+        req = {
+            "type": f"candle.{interval}",
+            "codes": [_to_upbit_market_code(ticker) for ticker in tickers],
+        }
+        self.send_request([req], format_type=format_type)
+
+    def recv_once(self) -> dict[str, Any] | str | None:
+        if self._ws is None:
+            raise RuntimeError("websocket is not connected")
+
+        try:
+            raw = self._ws.recv()
+        except Exception as error:
+            if error.__class__.__name__ == "WebSocketTimeoutException":
+                return None
+            raise
+
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="replace")
+
+        if isinstance(raw, str):
+            lowered = raw.strip().lower()
+            if lowered == "ping":
+                with self._send_lock:
+                    self._ws.send("pong")
+                return raw
+            if lowered == "pong":
+                return raw
+
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return raw
+
+    def _emit_event(self, msg: dict[str, Any] | str) -> None:
+        event_type = msg.get("type") if isinstance(msg, dict) else "raw"
+        event = {
+            "source": str(event_type or "public"),
+            "exchange": EXCHANGE_UPBIT,
+            "event_type": event_type,
+            "payload": msg,
+            "received_at": time.time(),
+        }
+        if self.event_queue is not None:
+            try:
+                self.event_queue.put_nowait(event)
+            except queue.Full:
+                pass
+        if callable(self.on_event):
+            self.on_event(event)
+
+    def start_listen(self, on_message: Any | None = None) -> None:
+        if self._listen_thread is not None and self._listen_thread.is_alive():
+            return
+
+        self._stop_event.clear()
+
+        def _loop() -> None:
+            while not self._stop_event.is_set() and self._ws is not None:
+                try:
+                    msg = self.recv_once()
+                    if msg is None:
+                        continue
+                    self._emit_event(msg)
+                    if callable(on_message):
+                        on_message(msg)
+                except Exception:
+                    break
+
+        self._listen_thread = threading.Thread(target=_loop, daemon=True)
+        self._listen_thread.start()
+
+
 class UpbitMyOrder:
     PRIVATE_WS_URL = "wss://api.upbit.com/websocket/v1/private"
 
@@ -535,6 +755,9 @@ class UpbitMyOrder:
             req["codes"] = codes
 
         self.send_request([req], format_type=format_type)
+
+    def subscribe_my_asset(self, *, format_type: str = "DEFAULT") -> None:
+        self.send_request([{"type": "myAsset"}], format_type=format_type)
 
     def recv_once(self) -> dict[str, Any] | str | None:
         if self._ws is None:
