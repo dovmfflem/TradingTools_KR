@@ -32,6 +32,10 @@ API_SURFACE: Final[dict[str, Any]] = {
                     "category": "configuration",
                     "description": "Load bithumb_api_key and bithumb_secret_key.",
                 },
+                "from_config(source='auto', file_path='info.yaml')": {
+                    "category": "configuration",
+                    "description": "Load credentials from env, keyring, then info.yaml.",
+                },
                 "list_trading_pairs(is_details=False)": {
                     "category": "Quotation / Trading Pairs",
                     "auth": "none",

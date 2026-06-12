@@ -32,6 +32,10 @@ API_SURFACE: Final[dict[str, Any]] = {
                     "category": "configuration",
                     "description": "Load coinone_access_token and coinone_secret_key.",
                 },
+                "from_config(source='auto', file_path='info.yaml')": {
+                    "category": "configuration",
+                    "description": "Load credentials from env, keyring, then info.yaml.",
+                },
                 "get_range_units(ticker)": {
                     "category": "Public / Market",
                     "auth": "none",

@@ -6,6 +6,7 @@ import unittest
 
 MODULES = [
     "main",
+    "src.core.credentials",
     "src.core.event_constants",
     "src.exchanges.bithumb.bithumb_api",
     "src.exchanges.bithumb.bithumb_rest",
@@ -31,6 +32,7 @@ MODULES = [
     "src.exchanges.lighter.lighter_databank",
     "src.exchanges.lighter.lighter_rest",
     "src.notifications.telegram_messenger",
+    "tools.credentials",
 ]
 
 

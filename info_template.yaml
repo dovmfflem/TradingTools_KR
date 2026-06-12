@@ -10,9 +10,17 @@ upbit_api_key: "YOUR_UPBIT_API_KEY"
 upbit_secret_key: "YOUR_UPBIT_SECRET_KEY"
 
 # Optional Upbit Pocket/Subpocket helpers.
-# Pocket APIs can use a separate Upbit Pocket API key.
+# Pocket APIs can use separate Upbit Pocket API keys, up to 5 total.
 upbit_pocket_api_key: "YOUR_UPBIT_POCKET_API_KEY"
 upbit_pocket_secret_key: "YOUR_UPBIT_POCKET_SECRET_KEY"
+upbit_pocket_2_api_key: "YOUR_UPBIT_POCKET_2_API_KEY"
+upbit_pocket_2_secret_key: "YOUR_UPBIT_POCKET_2_SECRET_KEY"
+upbit_pocket_3_api_key: "YOUR_UPBIT_POCKET_3_API_KEY"
+upbit_pocket_3_secret_key: "YOUR_UPBIT_POCKET_3_SECRET_KEY"
+upbit_pocket_4_api_key: "YOUR_UPBIT_POCKET_4_API_KEY"
+upbit_pocket_4_secret_key: "YOUR_UPBIT_POCKET_4_SECRET_KEY"
+upbit_pocket_5_api_key: "YOUR_UPBIT_POCKET_5_API_KEY"
+upbit_pocket_5_secret_key: "YOUR_UPBIT_POCKET_5_SECRET_KEY"
 upbit_main_pocket_uuid: "YOUR_UPBIT_MAIN_POCKET_UUID"
 upbit_subpocket_uuid: "YOUR_UPBIT_SUBPOCKET_UUID"
 

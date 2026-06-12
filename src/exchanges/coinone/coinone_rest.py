@@ -10,6 +10,7 @@ from typing import Any
 
 import requests
 
+from src.core.credentials import CredentialSource, load_credentials
 from src.core.event_constants import EXCHANGE_COINONE, SOURCE_ORDERBOOK
 
 
@@ -111,18 +112,20 @@ class CoinoneRest:
 
     @classmethod
     def from_info_yaml(cls, file_path: str = "info.yaml") -> "CoinoneRest":
-        path = Path(file_path)
-        if not path.exists():
-            raise FileNotFoundError(f"{file_path} not found")
+        return cls.from_config(source="info_yaml", file_path=file_path)
 
-        config = _parse_simple_yaml_mapping(path.read_text(encoding="utf-8"))
-        access_token = config.get("coinone_access_token")
-        secret_key = config.get("coinone_secret_key")
-        if not access_token or not secret_key:
-            raise ValueError(
-                "info.yaml must include 'coinone_access_token' and 'coinone_secret_key'"
-            )
-        return cls(access_token=str(access_token), secret_key=str(secret_key))
+    @classmethod
+    def from_config(
+        cls,
+        *,
+        source: CredentialSource = "auto",
+        file_path: str = "info.yaml",
+    ) -> "CoinoneRest":
+        credentials = load_credentials("coinone", source=source, file_path=file_path)
+        return cls(
+            access_token=credentials.access_token,
+            secret_key=credentials.secret_key,
+        )
 
     def _headers(self, body: dict[str, Any]) -> dict[str, str]:
         payload_json = json.dumps(body, separators=(",", ":"), ensure_ascii=False)

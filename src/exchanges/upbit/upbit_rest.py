@@ -11,6 +11,7 @@ from urllib.parse import urlencode
 import jwt
 import requests
 
+from src.core.credentials import CredentialSource, load_credentials
 from src.core.event_constants import EXCHANGE_UPBIT, SOURCE_ORDERBOOK
 
 
@@ -111,38 +112,48 @@ class UpbitRest:
 
     @classmethod
     def from_info_yaml(cls, file_path: str = "info.yaml") -> "UpbitRest":
-        path = Path(file_path)
-        if not path.exists():
-            raise FileNotFoundError(f"{file_path} not found")
-
-        config = _parse_simple_yaml_mapping(path.read_text(encoding="utf-8"))
-        api_key = config.get("upbit_api_key")
-        secret_key = config.get("upbit_secret_key")
-
-        if not api_key or not secret_key:
-            raise ValueError(
-                "info.yaml must include 'upbit_api_key' and 'upbit_secret_key'"
-            )
-
-        return cls(api_key=str(api_key), secret_key=str(secret_key))
+        return cls.from_config(source="info_yaml", file_path=file_path)
 
     @classmethod
-    def from_pocket_info_yaml(cls, file_path: str = "info.yaml") -> "UpbitRest":
-        path = Path(file_path)
-        if not path.exists():
-            raise FileNotFoundError(f"{file_path} not found")
+    def from_config(
+        cls,
+        *,
+        source: CredentialSource = "auto",
+        file_path: str = "info.yaml",
+    ) -> "UpbitRest":
+        credentials = load_credentials("upbit", source=source, file_path=file_path)
+        return cls(api_key=credentials.api_key, secret_key=credentials.secret_key)
 
-        config = _parse_simple_yaml_mapping(path.read_text(encoding="utf-8"))
-        api_key = config.get("upbit_pocket_api_key")
-        secret_key = config.get("upbit_pocket_secret_key")
+    @classmethod
+    def from_pocket_info_yaml(
+        cls,
+        file_path: str = "info.yaml",
+        *,
+        pocket_index: int = 1,
+    ) -> "UpbitRest":
+        return cls.from_pocket_config(
+            source="info_yaml",
+            file_path=file_path,
+            pocket_index=pocket_index,
+        )
 
-        if not api_key or not secret_key:
-            raise ValueError(
-                "info.yaml must include 'upbit_pocket_api_key' and "
-                "'upbit_pocket_secret_key'"
-            )
-
-        return cls(api_key=str(api_key), secret_key=str(secret_key))
+    @classmethod
+    def from_pocket_config(
+        cls,
+        *,
+        source: CredentialSource = "auto",
+        file_path: str = "info.yaml",
+        pocket_index: int = 1,
+    ) -> "UpbitRest":
+        if pocket_index < 1 or pocket_index > 5:
+            raise ValueError("pocket_index must be between 1 and 5")
+        exchange_key = f"upbit_pocket_{pocket_index}"
+        credentials = load_credentials(
+            exchange_key,
+            source=source,
+            file_path=file_path,
+        )
+        return cls(api_key=credentials.api_key, secret_key=credentials.secret_key)
 
     @staticmethod
     def _build_query_string(payload: dict[str, Any]) -> str:

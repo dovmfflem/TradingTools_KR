@@ -1,14 +1,16 @@
 # TradingTools KR
 
+Language: **English** | [Korean](README_ko.md)
+
 Python helpers for Korean and global exchange trading APIs, orderbook data collection, private order streams, and Telegram notifications.
 
 This public version intentionally excludes strategy bots, arbitrage engines, GUI tools, local logs, and trading databases.
 
 ## Included Modules
 
-- Bithumb: REST orders/account, public orderbook feed, private order stream
-- Upbit: REST orders/account, public orderbook feed, private order stream
-- Coinone: REST orders/account, public orderbook feed, private order stream
+- Upbit: REST trading/account/pocket APIs, public orderbook feed, private order stream
+- Bithumb: REST trading/account/deposit/withdrawal APIs, public orderbook feed, private order stream
+- Coinone: REST public data/trading/account/transaction APIs, public orderbook feed, private order stream
 - Binance Futures: REST orders/account, public order stream, public spot/futures orderbook feeds
 - Bybit Spot: REST orders/account, public spot/futures orderbook feeds
 - Bitget Spot: REST orders/account, public spot/futures orderbook feeds
@@ -31,12 +33,98 @@ Copy-Item info_template.yaml info.yaml
 
 `info.yaml` is ignored by Git. Do not commit real API keys, private keys, or Telegram bot tokens.
 
+## Credentials
+
+Credential loading supports four modes:
+
+```text
+auto: env -> keyring -> info.yaml
+env: environment variables only
+keyring: OS credential store only
+info_yaml: local info.yaml only
+```
+
+Use `from_config()` for the automatic loader:
+
+```python
+from src.exchanges.upbit import UpbitRest
+
+client = UpbitRest.from_config(source="auto")
+```
+
+The existing `from_info_yaml("info.yaml")` methods still work.
+
+### Environment Variables
+
+```text
+TRADINGTOOLS_UPBIT_API_KEY
+TRADINGTOOLS_UPBIT_SECRET_KEY
+TRADINGTOOLS_BITHUMB_API_KEY
+TRADINGTOOLS_BITHUMB_SECRET_KEY
+TRADINGTOOLS_COINONE_ACCESS_TOKEN
+TRADINGTOOLS_COINONE_SECRET_KEY
+```
+
+Upbit Pocket API keys support up to 5 slots:
+
+```text
+TRADINGTOOLS_UPBIT_POCKET_API_KEY
+TRADINGTOOLS_UPBIT_POCKET_SECRET_KEY
+TRADINGTOOLS_UPBIT_POCKET_2_API_KEY
+TRADINGTOOLS_UPBIT_POCKET_2_SECRET_KEY
+...
+TRADINGTOOLS_UPBIT_POCKET_5_API_KEY
+TRADINGTOOLS_UPBIT_POCKET_5_SECRET_KEY
+```
+
+### OS Keyring
+
+Keyring support is optional and useful on desktop systems with an OS credential store.
+
+```powershell
+python -m pip install -r requirements-keyring.txt
+python -m tools.credentials set upbit
+python -m tools.credentials set bithumb
+python -m tools.credentials set coinone
+python -m tools.credentials list
+```
+
+Upbit Pocket API keys can be registered as separate keyring entries:
+
+```powershell
+python -m tools.credentials set upbit_pocket_1
+python -m tools.credentials set upbit_pocket_2
+python -m tools.credentials set upbit_pocket_3
+python -m tools.credentials set upbit_pocket_4
+python -m tools.credentials set upbit_pocket_5
+```
+
+Load a specific Upbit Pocket slot:
+
+```python
+from src.exchanges.upbit import UpbitRest
+
+client = UpbitRest.from_pocket_config(source="auto", pocket_index=1)
+```
+
+## API Surface Files
+
+Each implemented Korean exchange has an `api_surface.py` file that acts like a lightweight header/documentation map:
+
+```text
+src/exchanges/upbit/api_surface.py
+src/exchanges/bithumb/api_surface.py
+src/exchanges/coinone/api_surface.py
+```
+
+These files record implemented methods, endpoint paths, authentication requirements, and official documentation URLs.
+
 ## Examples
 
 ```python
 from src.exchanges.bithumb.bithumb_rest import BithumbRest
 
-client = BithumbRest.from_info_yaml("info.yaml")
+client = BithumbRest.from_config(source="auto")
 orderbook = client.get_orderbook("xrp-krw")
 print(orderbook)
 ```
@@ -55,9 +143,15 @@ python examples/upbit_live_test.py --private-read
 python examples/upbit_live_test.py --private-read --trade
 ```
 
-The trade test uses `btc-krw`, checks the price before buy/sell, buys `6000` KRW
-with a market buy, checks the BTC balance before selling, then market-sells the
-bought BTC amount.
+The trade test uses `btc-krw`, checks the price before buy/sell, buys `6000` KRW with a market buy, checks the BTC balance before selling, then market-sells the bought BTC amount.
+
+## Tests
+
+```powershell
+python -m unittest discover -s tests
+```
+
+The test suite avoids live exchange calls. Live API checks are kept in `examples/`.
 
 ## Repository Hygiene
 

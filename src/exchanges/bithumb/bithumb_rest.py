@@ -14,6 +14,7 @@ os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
 import jwt
 import requests
 
+from src.core.credentials import CredentialSource, load_credentials
 from src.core.event_constants import EXCHANGE_BITHUMB, SOURCE_ORDERBOOK
 
 
@@ -110,20 +111,17 @@ class BithumbRest:
 
     @classmethod
     def from_info_yaml(cls, file_path: str = "info.yaml") -> "BithumbRest":
-        path = Path(file_path)
-        if not path.exists():
-            raise FileNotFoundError(f"{file_path} not found")
+        return cls.from_config(source="info_yaml", file_path=file_path)
 
-        config = _parse_simple_yaml_mapping(path.read_text(encoding="utf-8"))
-        api_key = config.get("bithumb_api_key")
-        secret_key = config.get("bithumb_secret_key")
-
-        if not api_key or not secret_key:
-            raise ValueError(
-                "info.yaml must include 'bithumb_api_key' and 'bithumb_secret_key'"
-            )
-
-        return cls(api_key=str(api_key), secret_key=str(secret_key))
+    @classmethod
+    def from_config(
+        cls,
+        *,
+        source: CredentialSource = "auto",
+        file_path: str = "info.yaml",
+    ) -> "BithumbRest":
+        credentials = load_credentials("bithumb", source=source, file_path=file_path)
+        return cls(api_key=credentials.api_key, secret_key=credentials.secret_key)
 
     @staticmethod
     def _build_query_string(payload: dict[str, Any]) -> str:

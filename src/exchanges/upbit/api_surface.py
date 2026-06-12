@@ -31,9 +31,17 @@ API_SURFACE: Final[dict[str, Any]] = {
                     "category": "configuration",
                     "description": "Load upbit_api_key and upbit_secret_key.",
                 },
-                "from_pocket_info_yaml(file_path='info.yaml')": {
+                "from_config(source='auto', file_path='info.yaml')": {
                     "category": "configuration",
-                    "description": "Load upbit_pocket_api_key and upbit_pocket_secret_key.",
+                    "description": "Load credentials from env, keyring, then info.yaml.",
+                },
+                "from_pocket_info_yaml(file_path='info.yaml', pocket_index=1)": {
+                    "category": "configuration",
+                    "description": "Load one of up to five Upbit Pocket API key pairs from info.yaml.",
+                },
+                "from_pocket_config(source='auto', file_path='info.yaml', pocket_index=1)": {
+                    "category": "configuration",
+                    "description": "Load Upbit Pocket credentials 1-5 from env, keyring, then info.yaml.",
                 },
                 "list_trading_pairs(is_details=False)": {
                     "category": "Quotation / Trading Pairs",
