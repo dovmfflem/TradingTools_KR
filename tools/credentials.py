@@ -12,7 +12,7 @@ from src.core.credentials import (
 )
 
 
-CLI_EXCHANGES = sorted(name for name in SPECS if name != "upbit_pocket")
+CLI_EXCHANGES = sorted(SPECS)
 
 
 def _set_credentials(exchange: str) -> None:

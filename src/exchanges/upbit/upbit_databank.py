@@ -80,7 +80,9 @@ def _parse_simple_yaml_mapping(text: str) -> dict[str, Any]:
 
 
 def _to_upbit_market_code(value: str) -> str:
-    normalized = value.strip().upper()
+    raw = value.strip()
+    normalized = raw.upper()
+    raw_parts = raw.split("-", 1)
     parts = normalized.split("-", 1)
     if len(parts) != 2 or not parts[0] or not parts[1]:
         raise ValueError(
@@ -88,7 +90,16 @@ def _to_upbit_market_code(value: str) -> str:
         )
 
     first, second = parts[0], parts[1]
-    if first in {"KRW", "BTC", "USDT"}:
+    quote_currencies = {"KRW", "BTC", "USDT"}
+    if (
+        len(raw_parts) == 2
+        and raw_parts[0].isupper()
+        and first in quote_currencies
+    ):
+        return f"{first}-{second}"
+    if second in quote_currencies:
+        return f"{second}-{first}"
+    if first in quote_currencies:
         return f"{first}-{second}"
     return f"{second}-{first}"
 

@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from collections.abc import Callable
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.core.credentials import CredentialSource
 from src.exchanges.upbit.upbit_rest import UpbitRest
 
 
@@ -181,6 +188,12 @@ def _run_trade_round_trip(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Live Upbit API smoke tester.")
     parser.add_argument("--info", default="info.yaml")
+    parser.add_argument(
+        "--source",
+        choices=["auto", "env", "keyring", "info_yaml"],
+        default="auto",
+        help="credential source. auto tries env, keyring, then info.yaml.",
+    )
     parser.add_argument("--ticker", default="btc-krw")
     parser.add_argument("--quote-currency", default="KRW")
     parser.add_argument("--base-currency", default="BTC")
@@ -191,17 +204,33 @@ def main() -> None:
     parser.add_argument("--private-read", action="store_true")
     parser.add_argument("--pocket-read", action="store_true")
     parser.add_argument("--use-pocket-key", action="store_true")
+    parser.add_argument(
+        "--pocket-index",
+        type=int,
+        default=1,
+        choices=range(1, 6),
+        metavar="{1,2,3,4,5}",
+        help="Upbit Pocket credential slot to use with --use-pocket-key.",
+    )
     parser.add_argument("--trade", action="store_true")
     args = parser.parse_args()
 
+    source: CredentialSource = args.source
     client = (
-        UpbitRest.from_pocket_info_yaml(args.info)
+        UpbitRest.from_pocket_config(
+            source=source,
+            file_path=args.info,
+            pocket_index=args.pocket_index,
+        )
         if args.use_pocket_key
-        else UpbitRest.from_info_yaml(args.info)
+        else UpbitRest.from_config(source=source, file_path=args.info)
     )
 
     print("[INFO] Upbit live test started")
     print(f"[INFO] ticker={args.ticker} quote={args.quote_currency} base={args.base_currency}")
+    print(f"[INFO] credential source={args.source}")
+    if args.use_pocket_key:
+        print(f"[INFO] pocket credential slot={args.pocket_index}")
 
     _run_public_tests(client, args.ticker, args.quote_currency)
 

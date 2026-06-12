@@ -2,9 +2,9 @@
 
 Language: **English** | [Korean](README_ko.md)
 
-Python helpers for Korean and global exchange trading APIs, orderbook data collection, private order streams, and Telegram notifications.
+TradingTools KR is a collection of exchange API clients for trading, account access, market data, orderbook collection, private order streams, and Telegram notifications.
 
-This public version intentionally excludes strategy bots, arbitrage engines, GUI tools, local logs, and trading databases.
+The project keeps exchange API surfaces documented in code so implementations can be reviewed and updated as each exchange changes its official API pages.
 
 ## Included Modules
 
@@ -68,8 +68,8 @@ TRADINGTOOLS_COINONE_SECRET_KEY
 Upbit Pocket API keys support up to 5 slots:
 
 ```text
-TRADINGTOOLS_UPBIT_POCKET_API_KEY
-TRADINGTOOLS_UPBIT_POCKET_SECRET_KEY
+TRADINGTOOLS_UPBIT_POCKET_1_API_KEY
+TRADINGTOOLS_UPBIT_POCKET_1_SECRET_KEY
 TRADINGTOOLS_UPBIT_POCKET_2_API_KEY
 TRADINGTOOLS_UPBIT_POCKET_2_SECRET_KEY
 ...
@@ -139,8 +139,11 @@ messenger.send_message("TradingTools KR notification test")
 Run Upbit live API smoke tests with real credentials:
 
 ```powershell
+python examples/upbit_quotation_test.py
 python examples/upbit_live_test.py --private-read
-python examples/upbit_live_test.py --private-read --trade
+python examples/upbit_live_test.py --source keyring --private-read
+python examples/upbit_live_test.py --source keyring --private-read --trade
+python examples/upbit_live_test.py --source keyring --use-pocket-key --pocket-index 1 --pocket-read
 ```
 
 The trade test uses `btc-krw`, checks the price before buy/sell, buys `6000` KRW with a market buy, checks the BTC balance before selling, then market-sells the bought BTC amount.

@@ -2,7 +2,7 @@
 
 언어: [English](README.md) | **Korean**
 
-국내외 거래소 API, 호가 데이터 수집, 개인 주문 스트림, 텔레그램 알림을 위한 Python 헬퍼 모음입니다.
+TradingTools KR은 거래, 계좌 조회, 시장 데이터, 호가 수집, 개인 주문 스트림, 텔레그램 알림을 위한 거래소 API 클라이언트 모음입니다.
 
 ## 포함 모듈
 
@@ -66,8 +66,8 @@ TRADINGTOOLS_COINONE_SECRET_KEY
 업비트 포켓 API 키는 최대 5개 슬롯을 지원합니다.
 
 ```text
-TRADINGTOOLS_UPBIT_POCKET_API_KEY
-TRADINGTOOLS_UPBIT_POCKET_SECRET_KEY
+TRADINGTOOLS_UPBIT_POCKET_1_API_KEY
+TRADINGTOOLS_UPBIT_POCKET_1_SECRET_KEY
 TRADINGTOOLS_UPBIT_POCKET_2_API_KEY
 TRADINGTOOLS_UPBIT_POCKET_2_SECRET_KEY
 ...
@@ -137,8 +137,11 @@ messenger.send_message("TradingTools KR notification test")
 실제 인증정보로 업비트 라이브 smoke test를 실행할 수 있습니다.
 
 ```powershell
+python examples/upbit_quotation_test.py
 python examples/upbit_live_test.py --private-read
-python examples/upbit_live_test.py --private-read --trade
+python examples/upbit_live_test.py --source keyring --private-read
+python examples/upbit_live_test.py --source keyring --private-read --trade
+python examples/upbit_live_test.py --source keyring --use-pocket-key --pocket-index 1 --pocket-read
 ```
 
 거래 테스트는 `btc-krw` 기준으로 매수/매도 전 가격을 조회하고, 6000원 시장가 매수 후 BTC 잔고를 확인한 다음 매수된 BTC 수량만큼 시장가 매도합니다.
@@ -153,4 +156,4 @@ python -m unittest discover -s tests
 
 ## 저장소 관리
 
-저장소에는 소스 코드, 가벼운 테스트, 문서만 포함하는 것을 원칙으로 합니다. `data/`, `logs/`, `*.db`, `*.sqlite3`, `*.csv`, `*.jsonl`, `.venv/`, `info.yaml` 같은 런타임 산출물은 Git에서 제외됩니다.
+저장소에는 소스 코드, 가벼운 테스트, 문서를 포함합니다. `data/`, `logs/`, `*.db`, `*.sqlite3`, `*.csv`, `*.jsonl`, `.venv/`, `info.yaml` 같은 런타임 산출물은 Git에서 제외됩니다.

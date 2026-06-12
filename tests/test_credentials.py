@@ -100,6 +100,14 @@ class CredentialsTest(unittest.TestCase):
     def test_upbit_pocket_specs_support_five_slots(self) -> None:
         for index in range(1, 6):
             self.assertIn(f"upbit_pocket_{index}", SPECS)
+        self.assertEqual(
+            SPECS["upbit_pocket_1"].env_primary,
+            "TRADINGTOOLS_UPBIT_POCKET_1_API_KEY",
+        )
+        self.assertEqual(
+            SPECS["upbit_pocket_1"].yaml_primary,
+            "upbit_pocket_1_api_key",
+        )
 
     def test_load_upbit_pocket_fifth_slot_from_info_yaml(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
