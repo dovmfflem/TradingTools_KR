@@ -1,0 +1,44 @@
+# Copy this file to info.yaml and fill in your own credentials.
+# Never commit info.yaml.
+
+# Bithumb
+bithumb_api_key: "YOUR_BITHUMB_API_KEY"
+bithumb_secret_key: "YOUR_BITHUMB_SECRET_KEY"
+
+# Upbit
+upbit_api_key: "YOUR_UPBIT_API_KEY"
+upbit_secret_key: "YOUR_UPBIT_SECRET_KEY"
+
+# Coinone
+coinone_access_token: "YOUR_COINONE_ACCESS_TOKEN"
+coinone_secret_key: "YOUR_COINONE_SECRET_KEY"
+
+# Binance Futures
+binance_futures_api_key: "YOUR_BINANCE_FUTURES_API_KEY"
+binance_futures_secret_key: "YOUR_BINANCE_FUTURES_SECRET_KEY"
+
+# Bybit Spot
+bybit_api_key: "YOUR_BYBIT_API_KEY"
+bybit_secret_key: "YOUR_BYBIT_SECRET_KEY"
+
+# Bitget Spot
+bitget_api_key: "YOUR_BITGET_API_KEY"
+bitget_secret_key: "YOUR_BITGET_SECRET_KEY"
+bitget_passphrase: "YOUR_BITGET_PASSPHRASE"
+
+# Lighter
+lighter_account_index: "YOUR_LIGHTER_ACCOUNT_INDEX"
+lighter_api_key_index: "YOUR_LIGHTER_API_KEY_INDEX"
+lighter_api_private_key: "YOUR_LIGHTER_API_PRIVATE_KEY"
+lighter_base_url: "https://mainnet.zklighter.elliot.ai"
+
+# Telegram notification, legacy single-bot format
+telegram_token: "YOUR_TELEGRAM_BOT_TOKEN"
+telegram_chat_id: "YOUR_TELEGRAM_CHAT_ID"
+
+# Telegram notification, named multi-bot format
+telegram:
+  bots:
+    default:
+      token: "YOUR_TELEGRAM_BOT_TOKEN"
+      chat_id: "YOUR_TELEGRAM_CHAT_ID"
