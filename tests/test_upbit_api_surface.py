@@ -9,6 +9,7 @@ from src.exchanges.upbit.upbit_databank import (
     _to_upbit_market_code,
 )
 from src.exchanges.upbit.upbit_rest import UpbitRest, _to_market_code
+from examples.upbit_exchange_test import _find_deposit_address_pair
 
 
 class UpbitApiSurfaceTest(unittest.TestCase):
@@ -19,6 +20,35 @@ class UpbitApiSurfaceTest(unittest.TestCase):
         self.assertEqual(_to_market_code("BTC-ETH"), "BTC-ETH")
         self.assertEqual(_to_upbit_market_code("btc-krw"), "KRW-BTC")
         self.assertEqual(_to_upbit_market_code("KRW-BTC"), "KRW-BTC")
+
+    def test_deposit_address_pair_prefers_requested_pair(self) -> None:
+        addresses = [
+            {"currency": "USDT", "net_type": "TRX"},
+            {"currency": "BTC", "net_type": "BTC"},
+        ]
+
+        self.assertEqual(
+            _find_deposit_address_pair(
+                addresses,
+                preferred_currency="BTC",
+                preferred_net_type="BTC",
+            ),
+            {"currency": "BTC", "net_type": "BTC"},
+        )
+
+    def test_deposit_address_pair_returns_none_when_requested_pair_is_missing(self) -> None:
+        addresses = [
+            {"currency": "LUNC", "net_type": "LUNC"},
+            {"currency": "USDT", "net_type": "TRX"},
+        ]
+
+        self.assertIsNone(
+            _find_deposit_address_pair(
+                addresses,
+                preferred_currency="BTC",
+                preferred_net_type="BTC",
+            )
+        )
 
     def test_surface_has_no_missing_entries(self) -> None:
         for module in API_SURFACE["modules"].values():

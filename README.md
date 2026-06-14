@@ -140,11 +140,22 @@ Run Upbit live API smoke tests with real credentials:
 
 ```powershell
 python examples/upbit_quotation_test.py
+python examples/upbit_exchange_test.py --source keyring
+python examples/bithumb_exchange_test.py --source keyring
 python examples/upbit_live_test.py --private-read
 python examples/upbit_live_test.py --source keyring --private-read
 python examples/upbit_live_test.py --source keyring --private-read --trade
 python examples/upbit_live_test.py --source keyring --use-pocket-key --pocket-index 1 --pocket-read
 ```
+
+You can also run only the single deposit-address lookup. Use a currency/net_type pair that already has an address on your account.
+
+```powershell
+python examples/upbit_exchange_test.py --only deposit_address --deposit-currency USDT --deposit-net-type TRX
+python examples/bithumb_exchange_test.py --only deposit_address --deposit-currency USDT --deposit-net-type TRX
+```
+
+Exchange API tests sleep for 1 second after each executed API request by default. Adjust with `--request-sleep` when needed.
 
 The trade test uses `btc-krw`, checks the price before buy/sell, buys `6000` KRW with a market buy, checks the BTC balance before selling, then market-sells the bought BTC amount.
 
@@ -155,6 +166,7 @@ python -m unittest discover -s tests
 ```
 
 The test suite avoids live exchange calls. Live API checks are kept in `examples/`.
+All test workflows should save useful result artifacts for future API maintenance. Public API responses can be stored as fixtures, while private/authenticated responses should avoid sensitive fields by default. When explicitly requested for local debugging, unmasked responses may be written under ignored `tests/results/` directories.
 
 ## Repository Hygiene
 

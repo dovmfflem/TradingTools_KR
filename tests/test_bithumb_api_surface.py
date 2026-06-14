@@ -5,9 +5,39 @@ import unittest
 from src.exchanges.bithumb.api_surface import API_SURFACE
 from src.exchanges.bithumb.bithumb_rest import BithumbRest
 from src.exchanges.bithumb.bithumb_websocket import BithumbDataBank, BithumbMyOrder
+from examples.bithumb_exchange_test import _find_deposit_address_pair
 
 
 class BithumbApiSurfaceTest(unittest.TestCase):
+    def test_deposit_address_pair_prefers_requested_pair(self) -> None:
+        addresses = [
+            {"currency": "USDT", "net_type": "TRX"},
+            {"currency": "BTC", "net_type": "BTC"},
+        ]
+
+        self.assertEqual(
+            _find_deposit_address_pair(
+                addresses,
+                preferred_currency="BTC",
+                preferred_net_type="BTC",
+            ),
+            {"currency": "BTC", "net_type": "BTC"},
+        )
+
+    def test_deposit_address_pair_returns_none_when_requested_pair_is_missing(self) -> None:
+        addresses = [
+            {"currency": "USDT", "net_type": "TRX"},
+            {"currency": "ETH", "net_type": "ETH"},
+        ]
+
+        self.assertIsNone(
+            _find_deposit_address_pair(
+                addresses,
+                preferred_currency="BTC",
+                preferred_net_type="BTC",
+            )
+        )
+
     def test_surface_declares_known_missing_entries(self) -> None:
         rest_missing = API_SURFACE["modules"]["rest"]["missing"]
         self.assertIn("TWAP order APIs", rest_missing)

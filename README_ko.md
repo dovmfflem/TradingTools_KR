@@ -138,11 +138,22 @@ messenger.send_message("TradingTools KR notification test")
 
 ```powershell
 python examples/upbit_quotation_test.py
+python examples/upbit_exchange_test.py --source keyring
+python examples/bithumb_exchange_test.py --source keyring
 python examples/upbit_live_test.py --private-read
 python examples/upbit_live_test.py --source keyring --private-read
 python examples/upbit_live_test.py --source keyring --private-read --trade
 python examples/upbit_live_test.py --source keyring --use-pocket-key --pocket-index 1 --pocket-read
 ```
+
+입금 주소 단건 조회만 따로 확인할 수도 있습니다. `--deposit-currency`와 `--deposit-net-type`에는 실제 생성된 입금 주소 페어를 넣습니다.
+
+```powershell
+python examples/upbit_exchange_test.py --only deposit_address --deposit-currency USDT --deposit-net-type TRX
+python examples/bithumb_exchange_test.py --only deposit_address --deposit-currency USDT --deposit-net-type TRX
+```
+
+Exchange API 테스트는 실제 API 호출 후 기본 1초씩 대기합니다. 필요하면 `--request-sleep`으로 조절합니다.
 
 거래 테스트는 `btc-krw` 기준으로 매수/매도 전 가격을 조회하고, 6000원 시장가 매수 후 BTC 잔고를 확인한 다음 매수된 BTC 수량만큼 시장가 매도합니다.
 
@@ -153,6 +164,7 @@ python -m unittest discover -s tests
 ```
 
 기본 테스트는 실제 거래소 API를 호출하지 않습니다. 라이브 API 확인 코드는 `examples/`에 분리되어 있습니다.
+모든 테스트 워크플로는 이후 API 유지보수에 쓸 수 있도록 유용한 결과물을 저장하는 것을 원칙으로 합니다. 공개 API 응답은 fixture로 저장할 수 있고, 개인/인증 API 응답은 기본적으로 민감 정보 저장을 피합니다. 사용자가 로컬 디버깅을 위해 명시적으로 요청한 경우에만 `tests/results/` 아래에 원문 응답을 저장합니다.
 
 ## 저장소 관리
 

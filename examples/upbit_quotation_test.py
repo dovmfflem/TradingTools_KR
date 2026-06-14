@@ -5,6 +5,7 @@ import json
 import sys
 import time
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -16,10 +17,41 @@ from src.exchanges.upbit.upbit_rest import UpbitRest, _to_market_code
 
 
 def _json(data: Any) -> str:
-    try:
-        return json.dumps(data, ensure_ascii=False, indent=2, default=str)
-    except TypeError:
-        return repr(data)
+    return json.dumps(data, ensure_ascii=False, indent=2, default=str)
+
+
+def _slug(value: str) -> str:
+    replacements = {
+        "페어 목록 조회": "market_all",
+        "초 캔들 조회": "candles_seconds",
+        "분 캔들 조회": "candles_minutes",
+        "일 캔들 조회": "candles_days",
+        "주 캔들 조회": "candles_weeks",
+        "월 캔들 조회": "candles_months",
+        "연 캔들 조회": "candles_years",
+        "페어 체결 이력 조회": "trades_ticks",
+        "페어 단위 현재가 조회": "ticker_pair",
+        "마켓 단위 현재가 조회": "ticker_quote",
+        "호가 조회": "orderbook",
+        "호가 정책 조회": "orderbook_instruments",
+    }
+    return replacements[value]
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def _new_result_dir(base_dir: Path) -> Path:
+    stamp = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
+    result_dir = base_dir / stamp
+    result_dir.mkdir(parents=True, exist_ok=True)
+    return result_dir
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_json(payload) + "\n", encoding="utf-8")
 
 
 def _print_request(name: str, method: str, endpoint: str, params: dict[str, Any]) -> None:
@@ -31,22 +63,51 @@ def _print_request(name: str, method: str, endpoint: str, params: dict[str, Any]
 
 def _run_step(
     *,
+    exchange: str,
+    category: str,
     name: str,
     method: str,
     endpoint: str,
     params: dict[str, Any],
     call: Callable[[], Any],
-) -> None:
+    result_dir: Path | None,
+) -> dict[str, Any]:
     _print_request(name, method, endpoint, params)
+    captured_at = _now_iso()
+
+    artifact: dict[str, Any] = {
+        "exchange": exchange,
+        "category": category,
+        "api_name": name,
+        "method": method,
+        "endpoint": endpoint,
+        "params": params,
+        "captured_at": captured_at,
+    }
+
     try:
         result = call()
     except Exception as error:
+        artifact.update(
+            {
+                "success": False,
+                "error_type": error.__class__.__name__,
+                "error": str(error),
+            }
+        )
         print(f"[실패] {name}: {error}")
-        return
+    else:
+        artifact.update({"success": True, "response": result})
+        print(f"[성공] {name}")
+        print("[결과]")
+        print(_json(result))
 
-    print(f"[성공] {name}")
-    print("[결과]")
-    print(_json(result))
+    if result_dir is not None:
+        file_name = f"{_slug(name)}.json"
+        _write_json(result_dir / file_name, artifact)
+        print(f"[저장] {result_dir / file_name}")
+
+    return artifact
 
 
 def _sleep(seconds: float) -> None:
@@ -63,15 +124,31 @@ def main() -> None:
     parser.add_argument("--sleep", type=float, default=2.0)
     parser.add_argument("--count", type=int, default=3)
     parser.add_argument("--minute-unit", type=int, default=1)
+    parser.add_argument(
+        "--result-dir",
+        default="tests/results/upbit/quotation",
+        help="directory where timestamped result artifacts are stored",
+    )
+    parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help="print results only without saving artifacts",
+    )
     args = parser.parse_args()
 
     client = UpbitRest(api_key=args.api_key, secret_key=args.secret_key)
     market = _to_market_code(args.ticker)
+    result_dir = None if args.no_save else _new_result_dir(PROJECT_ROOT / args.result_dir)
 
     print("[시작] 업비트 Quotation API 순차 테스트")
-    print(f"[설정] ticker={args.ticker}, market={market}, quote_currency={args.quote_currency}, count={args.count}")
+    print(
+        f"[설정] ticker={args.ticker}, market={market}, "
+        f"quote_currency={args.quote_currency}, count={args.count}"
+    )
     print(f"[설정] sleep={args.sleep}초")
     print("[안내] Quotation API만 호출하므로 실제 업비트 인증정보가 필요하지 않습니다.")
+    if result_dir is not None:
+        print(f"[저장 위치] {result_dir}")
 
     steps: list[dict[str, Any]] = [
         {
@@ -168,19 +245,50 @@ def main() -> None:
         },
     ]
 
+    artifacts: list[dict[str, Any]] = []
     for index, step in enumerate(steps, start=1):
         print(f"\n[진행] {index}/{len(steps)}")
-        _run_step(
-            name=step["name"],
-            method=step["method"],
-            endpoint=step["endpoint"],
-            params=step["params"],
-            call=step["call"],
+        artifacts.append(
+            _run_step(
+                exchange="upbit",
+                category="quotation",
+                name=step["name"],
+                method=step["method"],
+                endpoint=step["endpoint"],
+                params=step["params"],
+                call=step["call"],
+                result_dir=result_dir,
+            )
         )
         if index < len(steps):
             _sleep(args.sleep)
 
+    success_count = sum(1 for artifact in artifacts if artifact.get("success"))
+    summary = {
+        "exchange": "upbit",
+        "category": "quotation",
+        "captured_at": _now_iso(),
+        "ticker": args.ticker,
+        "market": market,
+        "quote_currency": args.quote_currency,
+        "count": args.count,
+        "success_count": success_count,
+        "failure_count": len(artifacts) - success_count,
+        "artifacts": [
+            {
+                "api_name": artifact["api_name"],
+                "endpoint": artifact["endpoint"],
+                "success": artifact.get("success", False),
+            }
+            for artifact in artifacts
+        ],
+    }
+    if result_dir is not None:
+        _write_json(result_dir / "summary.json", summary)
+        print(f"\n[요약 저장] {result_dir / 'summary.json'}")
+
     print("\n[완료] 업비트 Quotation API 순차 테스트 종료")
+    print(f"[요약] 성공 {success_count}개, 실패 {len(artifacts) - success_count}개")
 
 
 if __name__ == "__main__":
