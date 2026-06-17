@@ -1,7 +1,7 @@
 from src.exchanges.coinone.api_surface import API_SURFACE
 from src.exchanges.coinone.coinone_api import CoinoneApi, CoinoneApiError
 from src.exchanges.coinone.coinone_rest import CoinoneRest, CoinoneRestError
-from src.exchanges.coinone.coinone_websocket import CoinoneDataBank, CoinoneMyOrder
+from src.exchanges.coinone.coinone_websocket import CoinoneDataBank, CoinoneMyOrder, CoinonePublicWebSocket
 
 __all__ = [
     "API_SURFACE",
@@ -11,4 +11,5 @@ __all__ = [
     "CoinoneRestError",
     "CoinoneDataBank",
     "CoinoneMyOrder",
+    "CoinonePublicWebSocket",
 ]

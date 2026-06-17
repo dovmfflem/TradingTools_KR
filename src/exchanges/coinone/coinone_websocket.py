@@ -21,6 +21,212 @@ except ModuleNotFoundError:
     websocket = None  # type: ignore[assignment]
 
 
+class CoinonePublicWebSocket:
+    PUBLIC_WS_URL = "wss://stream.coinone.co.kr"
+
+    def __init__(
+        self,
+        *,
+        url: str = PUBLIC_WS_URL,
+        timeout_seconds: float = 10.0,
+        ping_interval_seconds: float = 60.0,
+        event_queue: queue.Queue[dict[str, Any]] | None = None,
+        on_event: Any | None = None,
+    ) -> None:
+        if websocket is None:
+            raise RuntimeError("websocket-client is required. install: pip install websocket-client")
+
+        self.url = url
+        self.timeout_seconds = timeout_seconds
+        self.ping_interval_seconds = ping_interval_seconds
+        self.event_queue = event_queue
+        self.on_event = on_event
+
+        self._ws: Any | None = None
+        self._listen_thread: threading.Thread | None = None
+        self._ping_thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
+        self._send_lock = threading.Lock()
+
+    @staticmethod
+    def _topic(ticker: str, *, interval: str | None = None) -> dict[str, str]:
+        quote, target = _to_pair(ticker)
+        topic = {"quote_currency": quote, "target_currency": target}
+        if interval is not None:
+            topic["interval"] = interval
+        return topic
+
+    def connect(self) -> None:
+        if self._ws is not None:
+            return
+        ws_module = websocket
+        if ws_module is None:
+            raise RuntimeError("websocket-client is required. install: pip install websocket-client")
+
+        self._stop_event.clear()
+        self._ws = ws_module.create_connection(self.url, timeout=self.timeout_seconds)
+        self._start_ping_loop()
+
+    def _start_ping_loop(self) -> None:
+        if self._ping_thread is not None and self._ping_thread.is_alive():
+            return
+
+        def _loop() -> None:
+            while not self._stop_event.wait(self.ping_interval_seconds):
+                if self._ws is None:
+                    break
+                try:
+                    self.ping()
+                except Exception:
+                    break
+
+        self._ping_thread = threading.Thread(target=_loop, daemon=True)
+        self._ping_thread.start()
+
+    def send_request(self, request_body: dict[str, Any]) -> None:
+        if self._ws is None:
+            raise RuntimeError("websocket is not connected")
+
+        with self._send_lock:
+            self._ws.send(json.dumps(request_body))
+
+    def ping(self) -> None:
+        self.send_request({"request_type": "PING"})
+
+    def subscribe(
+        self,
+        channel: str,
+        ticker: str,
+        *,
+        interval: str | None = None,
+        format_type: str = "DEFAULT",
+    ) -> None:
+        channel_upper = channel.upper()
+        if channel_upper not in {"ORDERBOOK", "TICKER", "TRADE", "CHART"}:
+            raise ValueError("channel must be one of: ORDERBOOK, TICKER, TRADE, CHART")
+        if channel_upper == "CHART" and not interval:
+            raise ValueError("interval is required for CHART")
+
+        request_body: dict[str, Any] = {
+            "request_type": "SUBSCRIBE",
+            "channel": channel_upper,
+            "topic": self._topic(ticker, interval=interval if channel_upper == "CHART" else None),
+        }
+        if format_type:
+            request_body["format"] = format_type
+
+        self.send_request(request_body)
+
+    def unsubscribe(
+        self,
+        channel: str,
+        ticker: str,
+        *,
+        interval: str | None = None,
+        format_type: str = "DEFAULT",
+    ) -> None:
+        channel_upper = channel.upper()
+        if channel_upper not in {"ORDERBOOK", "TICKER", "TRADE", "CHART"}:
+            raise ValueError("channel must be one of: ORDERBOOK, TICKER, TRADE, CHART")
+        if channel_upper == "CHART" and not interval:
+            raise ValueError("interval is required for CHART")
+
+        request_body: dict[str, Any] = {
+            "request_type": "UNSUBSCRIBE",
+            "channel": channel_upper,
+            "topic": self._topic(ticker, interval=interval if channel_upper == "CHART" else None),
+        }
+        if format_type:
+            request_body["format"] = format_type
+
+        self.send_request(request_body)
+
+    def subscribe_orderbook(self, ticker: str, *, format_type: str = "DEFAULT") -> None:
+        self.subscribe("ORDERBOOK", ticker, format_type=format_type)
+
+    def subscribe_ticker(self, ticker: str, *, format_type: str = "DEFAULT") -> None:
+        self.subscribe("TICKER", ticker, format_type=format_type)
+
+    def subscribe_trade(self, ticker: str, *, format_type: str = "DEFAULT") -> None:
+        self.subscribe("TRADE", ticker, format_type=format_type)
+
+    def subscribe_chart(
+        self,
+        ticker: str,
+        *,
+        interval: str = "1m",
+        format_type: str = "DEFAULT",
+    ) -> None:
+        self.subscribe("CHART", ticker, interval=interval, format_type=format_type)
+
+    def recv_once(self) -> dict[str, Any] | str | None:
+        if self._ws is None:
+            raise RuntimeError("websocket is not connected")
+        try:
+            raw = self._ws.recv()
+        except Exception as error:
+            if error.__class__.__name__ == "WebSocketTimeoutException":
+                return None
+            raise
+
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="replace")
+        try:
+            return json.loads(raw)
+        except Exception:
+            return raw
+
+    def _emit_event(self, msg: dict[str, Any] | str) -> None:
+        event = {
+            "source": "coinone_public_websocket",
+            "exchange": EXCHANGE_COINONE,
+            "event_type": msg.get("channel") if isinstance(msg, dict) else "raw",
+            "payload": msg,
+            "received_at": time.time(),
+        }
+        if self.event_queue is not None:
+            try:
+                self.event_queue.put_nowait(event)
+            except queue.Full:
+                pass
+        if callable(self.on_event):
+            self.on_event(event)
+
+    def start_listen(self, on_message: Any | None = None) -> None:
+        if self._listen_thread is not None and self._listen_thread.is_alive():
+            return
+
+        self._stop_event.clear()
+
+        def _loop() -> None:
+            while not self._stop_event.is_set() and self._ws is not None:
+                try:
+                    msg = self.recv_once()
+                    if msg is None:
+                        continue
+                    self._emit_event(msg)
+                    if callable(on_message):
+                        on_message(msg)
+                except Exception:
+                    break
+
+        self._listen_thread = threading.Thread(target=_loop, daemon=True)
+        self._listen_thread.start()
+
+    def close(self) -> None:
+        self._stop_event.set()
+        if self._listen_thread is not None and self._listen_thread.is_alive():
+            self._listen_thread.join(timeout=2.0)
+        if self._ping_thread is not None and self._ping_thread.is_alive():
+            self._ping_thread.join(timeout=2.0)
+        if self._ws is not None:
+            try:
+                self._ws.close()
+            except Exception:
+                pass
+            self._ws = None
+
+
 class CoinoneDataBank:
     WS_URL = "wss://stream.coinone.co.kr"
 
@@ -298,6 +504,20 @@ class CoinoneMyOrder:
             "request_type": "SUBSCRIBE",
             "channel": "MYORDER",
             "topic": topics,
+        }
+        if format_type:
+            request_body["format"] = format_type
+
+        with self._send_lock:
+            self._ws.send(json.dumps(request_body))
+
+    def subscribe_my_asset(self, *, format_type: str = "DEFAULT") -> None:
+        if self._ws is None:
+            raise RuntimeError("websocket is not connected")
+
+        request_body: dict[str, Any] = {
+            "request_type": "SUBSCRIBE",
+            "channel": "MYASSET",
         }
         if format_type:
             request_body["format"] = format_type

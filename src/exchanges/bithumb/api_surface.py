@@ -181,6 +181,27 @@ API_SURFACE: Final[dict[str, Any]] = {
                     "endpoint": "/v2/orders",
                     "doc": _doc("다건-주문-취소-접수"),
                 },
+                "create_twap_order(...)": {
+                    "category": "Exchange / TWAP",
+                    "auth": "required",
+                    "method": "POST",
+                    "endpoint": "/v1/twap",
+                    "doc": _doc("twap-주문-요청"),
+                },
+                "cancel_twap_order(algo_order_id)": {
+                    "category": "Exchange / TWAP",
+                    "auth": "required",
+                    "method": "DELETE",
+                    "endpoint": "/v1/twap",
+                    "doc": _doc("twap-주문-취소"),
+                },
+                "list_twap_orders(...)": {
+                    "category": "Exchange / TWAP",
+                    "auth": "required",
+                    "method": "GET",
+                    "endpoint": "/v1/twap",
+                    "doc": _doc("twap-주문내역-조회"),
+                },
                 "get_withdraw_chance(currency, net_type=None)": {
                     "category": "Exchange / Withdrawal",
                     "auth": "required",
@@ -305,25 +326,51 @@ API_SURFACE: Final[dict[str, Any]] = {
                 "tradeTest(client, test_ticker='usdt-krw')": "Manual live-test helper.",
                 "orderbookTest(client, test_ticker='usdt-krw')": "Manual live-test helper.",
             },
-            "missing": {
-                "TWAP order APIs": "Documented separately; not implemented yet because the project currently keeps spot order primitives only.",
-            },
+            "missing": {},
         },
         "public_websocket": {
-            "client": "src.exchanges.bithumb.bithumb_databank.BithumbDataBank",
-            "source_file": "src/exchanges/bithumb/bithumb_databank.py",
+            "client": "src.exchanges.bithumb.bithumb_websocket.BithumbPublicWebSocket",
+            "source_file": "src/exchanges/bithumb/bithumb_websocket.py",
             "auth": "none",
-            "url": "wss://pubwss.bithumb.com/pub/ws",
+            "url": "wss://ws-api.bithumb.com/websocket/v1",
             "implemented": {
-                "orderbook stream": {
+                "subscribe_orderbook(tickers)": {
                     "category": "Quotation / WebSocket",
                     "doc": _doc("호가-orderbook"),
-                    "methods": ["start()", "stop(timeout_seconds=2.0)", "get_data(ticker=None)"],
+                },
+                "subscribe_ticker(tickers)": {
+                    "category": "Quotation / WebSocket",
+                    "doc": _doc("현재가-ticker"),
+                },
+                "subscribe_trade(tickers)": {
+                    "category": "Quotation / WebSocket",
+                    "doc": _doc("체결-trade"),
+                },
+                "subscribe_candle(tickers, interval='1m')": {
+                    "category": "local helper",
+                    "description": "Send candle.* public WebSocket subscription requests when supported by the server.",
+                },
+                "generic public stream": {
+                    "methods": [
+                        "connect()",
+                        "send_request(request_types)",
+                        "recv_once()",
+                        "start_listen(on_message=None)",
+                        "close()",
+                    ],
+                },
+                "BithumbDataBank": {
+                    "category": "legacy local orderbook data collector",
+                    "source_file": "src/exchanges/bithumb/bithumb_databank.py",
+                    "url": "wss://pubwss.bithumb.com/pub/ws",
+                    "methods": [
+                        "start()",
+                        "stop(timeout_seconds=2.0)",
+                        "get_data(ticker=None)",
+                    ],
                 },
             },
-            "missing": {
-                "ticker/trade/candle generic public websocket": "Legacy BithumbDataBank currently focuses on orderbook collection.",
-            },
+            "missing": {},
         },
         "private_websocket": {
             "client": "src.exchanges.bithumb.bithumb_websocket.BithumbMyOrder",
@@ -335,10 +382,22 @@ API_SURFACE: Final[dict[str, Any]] = {
                     "category": "Exchange / WebSocket",
                     "doc": _doc("내-주문-및-체결-myorder"),
                 },
+                "subscribe_my_asset()": {
+                    "category": "Exchange / WebSocket",
+                    "doc": _doc("내-자산-myasset"),
+                },
+                "generic private stream": {
+                    "methods": [
+                        "from_info_yaml(file_path='info.yaml')",
+                        "connect()",
+                        "send_request(request_types)",
+                        "recv_once()",
+                        "start_listen(on_message=None)",
+                        "close()",
+                    ],
+                },
             },
-            "missing": {
-                "my asset stream": "Documented by Bithumb; not implemented in this client yet.",
-            },
+            "missing": {},
         },
     },
 }

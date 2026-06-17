@@ -1,5 +1,10 @@
 # TradingTools KR
 
+[![CI](https://github.com/dovmfflem/TradingTools_KR/actions/workflows/ci.yml/badge.svg)](https://github.com/dovmfflem/TradingTools_KR/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)](https://www.python.org/)
+[![Runtime deps: 3](https://img.shields.io/badge/Runtime%20deps-3-brightgreen.svg)](requirements.txt)
+
 Language: **English** | [Korean](README_ko.md)
 
 TradingTools KR is a collection of exchange API clients for trading, account access, market data, orderbook collection, private order streams, and Telegram notifications.
@@ -142,6 +147,7 @@ Run Upbit live API smoke tests with real credentials:
 python examples/upbit_quotation_test.py
 python examples/upbit_exchange_test.py --source keyring
 python examples/bithumb_exchange_test.py --source keyring
+python examples/coinone_exchange_test.py --source keyring
 python examples/upbit_live_test.py --private-read
 python examples/upbit_live_test.py --source keyring --private-read
 python examples/upbit_live_test.py --source keyring --private-read --trade

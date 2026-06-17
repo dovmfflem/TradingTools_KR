@@ -1,5 +1,10 @@
 # TradingTools KR
 
+[![CI](https://github.com/dovmfflem/TradingTools_KR/actions/workflows/ci.yml/badge.svg)](https://github.com/dovmfflem/TradingTools_KR/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)](https://www.python.org/)
+[![Runtime deps: 3](https://img.shields.io/badge/Runtime%20deps-3-brightgreen.svg)](requirements.txt)
+
 언어: [English](README.md) | **Korean**
 
 TradingTools KR은 거래, 계좌 조회, 시장 데이터, 호가 수집, 개인 주문 스트림, 텔레그램 알림을 위한 거래소 API 클라이언트 모음입니다.
@@ -140,6 +145,7 @@ messenger.send_message("TradingTools KR notification test")
 python examples/upbit_quotation_test.py
 python examples/upbit_exchange_test.py --source keyring
 python examples/bithumb_exchange_test.py --source keyring
+python examples/coinone_exchange_test.py --source keyring
 python examples/upbit_live_test.py --private-read
 python examples/upbit_live_test.py --source keyring --private-read
 python examples/upbit_live_test.py --source keyring --private-read --trade

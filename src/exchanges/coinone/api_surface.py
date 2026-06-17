@@ -283,20 +283,61 @@ API_SURFACE: Final[dict[str, Any]] = {
             "missing": {},
         },
         "public_websocket": {
-            "client": "src.exchanges.coinone.coinone_websocket.CoinoneDataBank",
+            "client": "src.exchanges.coinone.coinone_websocket.CoinonePublicWebSocket",
             "source_file": "src/exchanges/coinone/coinone_websocket.py",
             "auth": "none",
             "url": "wss://stream.coinone.co.kr",
             "implemented": {
-                "orderbook stream": {
+                "connect() / close() / recv_once() / start_listen(on_message=None)": {
                     "category": "Public / WebSocket",
-                    "doc": _doc("public-websocket"),
+                    "doc": _doc("public-websocket-1"),
+                },
+                "send_request(request_body)": {
+                    "category": "Public / WebSocket",
+                    "doc": _doc("public-websocket-1"),
+                },
+                "ping()": {
+                    "category": "Public / WebSocket",
+                    "method": "PING",
+                    "doc": _doc("public-websocket-ping"),
+                },
+                "subscribe(channel, ticker, interval=None, format_type='DEFAULT')": {
+                    "category": "Public / WebSocket",
+                    "channels": ["ORDERBOOK", "TICKER", "TRADE", "CHART"],
+                    "doc": _doc("public-websocket-1"),
+                },
+                "unsubscribe(channel, ticker, interval=None, format_type='DEFAULT')": {
+                    "category": "Public / WebSocket",
+                    "channels": ["ORDERBOOK", "TICKER", "TRADE", "CHART"],
+                    "doc": _doc("public-websocket-1"),
+                },
+                "subscribe_orderbook(ticker, format_type='DEFAULT')": {
+                    "category": "Public / WebSocket",
+                    "channel": "ORDERBOOK",
+                    "doc": _doc("public-websocket-orderbook"),
+                },
+                "subscribe_ticker(ticker, format_type='DEFAULT')": {
+                    "category": "Public / WebSocket",
+                    "channel": "TICKER",
+                    "doc": _doc("public-websocket-ticker"),
+                },
+                "subscribe_trade(ticker, format_type='DEFAULT')": {
+                    "category": "Public / WebSocket",
+                    "channel": "TRADE",
+                    "doc": _doc("public-websocket-trade"),
+                },
+                "subscribe_chart(ticker, interval='1m', format_type='DEFAULT')": {
+                    "category": "Public / WebSocket",
+                    "channel": "CHART",
+                    "doc": _doc("public-websocket-chart"),
+                },
+                "CoinoneDataBank orderbook collector": {
+                    "category": "local helper",
+                    "doc": _doc("public-websocket-orderbook"),
                     "methods": ["start()", "stop(timeout_seconds=2.0)", "get_data(ticker=None)"],
                 },
             },
-            "missing": {
-                "ticker/trade/candle generic public websocket": "Current collector focuses on orderbook data.",
-            },
+            "missing": {},
         },
         "private_websocket": {
             "client": "src.exchanges.coinone.coinone_websocket.CoinoneMyOrder",
@@ -306,7 +347,13 @@ API_SURFACE: Final[dict[str, Any]] = {
             "implemented": {
                 "subscribe_my_order(tickers=None)": {
                     "category": "Private / WebSocket",
-                    "doc": _doc("private-websocket"),
+                    "channel": "MYORDER",
+                    "doc": _doc("private-websocket-1-myorder"),
+                },
+                "subscribe_my_asset()": {
+                    "category": "Private / WebSocket",
+                    "channel": "MYASSET",
+                    "doc": _doc("private-websocket-1-myasset"),
                 },
             },
             "missing": {},

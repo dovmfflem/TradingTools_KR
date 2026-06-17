@@ -559,6 +559,89 @@ class BithumbRest:
             raise ValueError("orders is required")
         return self._request("DELETE", "/v2/orders", json_body={"orders": orders})
 
+    def create_twap_order(
+        self,
+        *,
+        ticker: str,
+        side: str,
+        duration: str | int,
+        frequency: str | int,
+        price: str | float | int | None = None,
+        volume: str | float | int | None = None,
+    ) -> dict[str, Any]:
+        side_lower = side.lower()
+        if side_lower not in {"bid", "ask"}:
+            raise ValueError("side must be 'bid' or 'ask'")
+
+        duration_int = int(duration)
+        if duration_int < 300 or duration_int > 43200:
+            raise ValueError("duration must be between 300 and 43200 seconds")
+
+        frequency_value = str(frequency)
+        if frequency_value not in {"15", "20", "30", "60", "120"}:
+            raise ValueError("frequency must be one of: 15, 20, 30, 60, 120")
+
+        if side_lower == "bid" and price is None:
+            raise ValueError("bid TWAP order requires price")
+        if side_lower == "ask" and volume is None:
+            raise ValueError("ask TWAP order requires volume")
+
+        body = {
+            "market": _to_market_code(ticker),
+            "side": side_lower,
+            "volume": str(volume) if volume is not None else None,
+            "price": str(price) if price is not None else None,
+            "duration": str(duration_int),
+            "frequency": frequency_value,
+        }
+        data = self._request("POST", "/v1/twap", json_body=body)
+        return data if isinstance(data, dict) else {"data": data}
+
+    def cancel_twap_order(self, *, algo_order_id: str) -> dict[str, Any]:
+        if not algo_order_id:
+            raise ValueError("algo_order_id is required")
+        data = self._request(
+            "DELETE",
+            "/v1/twap",
+            params={"algo_order_id": algo_order_id},
+        )
+        return data if isinstance(data, dict) else {"data": data}
+
+    def list_twap_orders(
+        self,
+        *,
+        ticker: str | None = None,
+        uuids: list[str] | tuple[str, ...] | None = None,
+        state: str | None = None,
+        next_key: str | None = None,
+        limit: int | None = None,
+        order_by: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if state is not None and state not in {"progress", "done", "cancel"}:
+            raise ValueError("state must be one of: progress, done, cancel")
+        if order_by is not None and order_by not in {"asc", "desc"}:
+            raise ValueError("order_by must be 'asc' or 'desc'")
+        if limit is not None and (limit <= 0 or limit > 100):
+            raise ValueError("limit must be between 1 and 100")
+
+        data = self._request(
+            "GET",
+            "/v1/twap",
+            params={
+                "market": _to_market_code(ticker) if ticker else None,
+                "uuids[]": self._array(uuids),
+                "state": state,
+                "next_key": next_key,
+                "limit": limit,
+                "order_by": order_by,
+            },
+        )
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        if isinstance(data, dict) and isinstance(data.get("data"), list):
+            return [item for item in data["data"] if isinstance(item, dict)]
+        return []
+
     def get_accounts(self) -> list[dict[str, Any]]:
         data = self._request("GET", "/v1/accounts")
         if isinstance(data, list):

@@ -4,7 +4,11 @@ import unittest
 
 from src.exchanges.bithumb.api_surface import API_SURFACE
 from src.exchanges.bithumb.bithumb_rest import BithumbRest
-from src.exchanges.bithumb.bithumb_websocket import BithumbDataBank, BithumbMyOrder
+from src.exchanges.bithumb.bithumb_websocket import (
+    BithumbDataBank,
+    BithumbMyOrder,
+    BithumbPublicWebSocket,
+)
 from examples.bithumb_exchange_test import _find_deposit_address_pair
 
 
@@ -38,9 +42,9 @@ class BithumbApiSurfaceTest(unittest.TestCase):
             )
         )
 
-    def test_surface_declares_known_missing_entries(self) -> None:
-        rest_missing = API_SURFACE["modules"]["rest"]["missing"]
-        self.assertIn("TWAP order APIs", rest_missing)
+    def test_surface_has_no_missing_entries(self) -> None:
+        for module in API_SURFACE["modules"].values():
+            self.assertEqual(module["missing"], {})
 
     def test_rest_declared_methods_exist(self) -> None:
         method_names = [
@@ -65,6 +69,9 @@ class BithumbApiSurfaceTest(unittest.TestCase):
             "cancel_order",
             "place_orders",
             "cancel_orders",
+            "create_twap_order",
+            "cancel_twap_order",
+            "list_twap_orders",
             "get_withdraw_chance",
             "list_withdraw_addresses",
             "get_withdraw",
@@ -91,7 +98,45 @@ class BithumbApiSurfaceTest(unittest.TestCase):
         self.assertTrue(hasattr(BithumbDataBank, "start"))
         self.assertTrue(hasattr(BithumbDataBank, "stop"))
         self.assertTrue(hasattr(BithumbDataBank, "get_data"))
+        for method_name in [
+            "connect",
+            "send_request",
+            "recv_once",
+            "start_listen",
+            "close",
+            "subscribe_orderbook",
+            "subscribe_ticker",
+            "subscribe_trade",
+            "subscribe_candle",
+        ]:
+            with self.subTest(method=method_name):
+                self.assertTrue(hasattr(BithumbPublicWebSocket, method_name))
         self.assertTrue(hasattr(BithumbMyOrder, "subscribe_my_order"))
+        self.assertTrue(hasattr(BithumbMyOrder, "subscribe_my_asset"))
+
+    def test_twap_parameter_validation(self) -> None:
+        client = BithumbRest(api_key="api", secret_key="secret")
+
+        with self.assertRaises(ValueError):
+            client.create_twap_order(
+                ticker="btc-krw",
+                side="bid",
+                duration=299,
+                frequency=15,
+                price="6000",
+            )
+
+        with self.assertRaises(ValueError):
+            client.create_twap_order(
+                ticker="btc-krw",
+                side="ask",
+                duration=300,
+                frequency=17,
+                volume="0.001",
+            )
+
+        with self.assertRaises(ValueError):
+            client.list_twap_orders(limit=101)
 
 
 if __name__ == "__main__":
