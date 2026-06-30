@@ -119,8 +119,28 @@ class BithumbRest:
         *,
         source: CredentialSource = "auto",
         file_path: str = "info.yaml",
+        env_prefix: str | None = None,
+        env_primary: str | None = None,
+        env_secret: str | None = None,
+        yaml_primary: str | None = None,
+        yaml_secret: str | None = None,
+        keyring_primary: str | None = None,
+        keyring_secret: str | None = None,
+        keyring_service: str = "TradingTools_KR",
     ) -> "BithumbRest":
-        credentials = load_credentials("bithumb", source=source, file_path=file_path)
+        credentials = load_credentials(
+            "bithumb",
+            source=source,
+            file_path=file_path,
+            env_prefix=env_prefix,
+            env_primary=env_primary,
+            env_secret=env_secret,
+            yaml_primary=yaml_primary,
+            yaml_secret=yaml_secret,
+            keyring_primary=keyring_primary,
+            keyring_secret=keyring_secret,
+            keyring_service=keyring_service,
+        )
         return cls(api_key=credentials.api_key, secret_key=credentials.secret_key)
 
     @staticmethod

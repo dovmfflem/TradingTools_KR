@@ -72,6 +72,32 @@ TRADINGTOOLS_BINANCE_FUTURES_API_KEY
 TRADINGTOOLS_BINANCE_FUTURES_SECRET_KEY
 ```
 
+`TRADINGTOOLS` prefix는 기본값일 뿐입니다. 다른 프로젝트 이름공간을 쓰려면 `env_prefix`를 넘기면 됩니다.
+
+```python
+from src.exchanges.upbit.upbit_rest import UpbitRest
+
+client = UpbitRest.from_config(source="env", env_prefix="MYAPP")
+```
+
+정확한 credential 이름도 직접 바꿀 수 있습니다.
+
+```python
+client = UpbitRest.from_config(
+    source="env",
+    env_primary="MY_UPBIT_KEY",
+    env_secret="MY_UPBIT_SECRET",
+)
+
+client = UpbitRest.from_config(
+    source="info_yaml",
+    yaml_primary="my_upbit_key",
+    yaml_secret="my_upbit_secret",
+)
+```
+
+이 경우 `MYAPP_UPBIT_API_KEY`, `MYAPP_UPBIT_SECRET_KEY`를 읽습니다.
+
 업비트 포켓 API 키는 최대 5개 슬롯을 지원합니다.
 
 ```text
@@ -96,6 +122,19 @@ python -m tools.credentials set coinone
 python -m tools.credentials set binance
 python -m tools.credentials set binance_futures
 python -m tools.credentials list
+```
+
+OS keyring 저장 이름공간도 바꿀 수 있습니다.
+
+```powershell
+python -m tools.credentials --keyring-service MyApp set upbit
+python -m tools.credentials --keyring-service MyApp list
+```
+
+keyring item 이름도 바꿀 수 있습니다.
+
+```powershell
+python -m tools.credentials --keyring-service MyApp --keyring-primary my.key --keyring-secret my.secret set upbit
 ```
 
 업비트 포켓 API 키는 별도 슬롯으로 등록할 수 있습니다.

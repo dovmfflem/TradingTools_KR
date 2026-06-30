@@ -649,6 +649,14 @@ def main() -> None:
         choices=["auto", "env", "keyring", "info_yaml"],
         default="auto",
     )
+    parser.add_argument("--env-prefix", default=None)
+    parser.add_argument("--env-primary", default=None)
+    parser.add_argument("--env-secret", default=None)
+    parser.add_argument("--yaml-primary", default=None)
+    parser.add_argument("--yaml-secret", default=None)
+    parser.add_argument("--keyring-primary", default=None)
+    parser.add_argument("--keyring-secret", default=None)
+    parser.add_argument("--keyring-service", default="TradingTools_KR")
     parser.add_argument("--ticker", default="btc-krw")
     parser.add_argument("--base-currency", default="BTC")
     parser.add_argument("--net-type", default="BTC")
@@ -677,7 +685,18 @@ def main() -> None:
     args = parser.parse_args()
 
     source: CredentialSource = args.source
-    client = UpbitRest.from_config(source=source, file_path=args.info)
+    client = UpbitRest.from_config(
+        source=source,
+        file_path=args.info,
+        env_prefix=args.env_prefix,
+        env_primary=args.env_primary,
+        env_secret=args.env_secret,
+        yaml_primary=args.yaml_primary,
+        yaml_secret=args.yaml_secret,
+        keyring_primary=args.keyring_primary,
+        keyring_secret=args.keyring_secret,
+        keyring_service=args.keyring_service,
+    )
     market = _to_market_code(args.ticker)
     trade_krw = _decimal(args.trade_krw)
     deposit_currency = (args.deposit_currency or args.base_currency).upper()

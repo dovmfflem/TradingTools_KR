@@ -620,6 +620,14 @@ def main() -> None:
         choices=["auto", "env", "keyring", "info_yaml"],
         default="auto",
     )
+    parser.add_argument("--env-prefix", default=None)
+    parser.add_argument("--env-primary", default=None)
+    parser.add_argument("--env-secret", default=None)
+    parser.add_argument("--yaml-primary", default=None)
+    parser.add_argument("--yaml-secret", default=None)
+    parser.add_argument("--keyring-primary", default=None)
+    parser.add_argument("--keyring-secret", default=None)
+    parser.add_argument("--keyring-service", default="TradingTools_KR")
     parser.add_argument("--ticker", default="btc-krw")
     parser.add_argument("--base-currency", default="BTC")
     parser.add_argument("--transaction-id", default=None)
@@ -642,7 +650,18 @@ def main() -> None:
     args = parser.parse_args()
 
     source: CredentialSource = args.source
-    client = CoinoneRest.from_config(source=source, file_path=args.info)
+    client = CoinoneRest.from_config(
+        source=source,
+        file_path=args.info,
+        env_prefix=args.env_prefix,
+        env_primary=args.env_primary,
+        env_secret=args.env_secret,
+        yaml_primary=args.yaml_primary,
+        yaml_secret=args.yaml_secret,
+        keyring_primary=args.keyring_primary,
+        keyring_secret=args.keyring_secret,
+        keyring_service=args.keyring_service,
+    )
     quote_currency, target_currency = _to_pair(args.ticker)
     if args.base_currency.upper() != target_currency:
         print(f"[참고] --base-currency={args.base_currency} 대신 ticker 기준 {target_currency}를 사용합니다.")

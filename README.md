@@ -74,6 +74,32 @@ TRADINGTOOLS_BINANCE_FUTURES_API_KEY
 TRADINGTOOLS_BINANCE_FUTURES_SECRET_KEY
 ```
 
+The `TRADINGTOOLS` prefix is the default only. For another project namespace, pass `env_prefix`:
+
+```python
+from src.exchanges.upbit.upbit_rest import UpbitRest
+
+client = UpbitRest.from_config(source="env", env_prefix="MYAPP")
+```
+
+This reads `MYAPP_UPBIT_API_KEY` and `MYAPP_UPBIT_SECRET_KEY`.
+
+You can also override the exact credential names:
+
+```python
+client = UpbitRest.from_config(
+    source="env",
+    env_primary="MY_UPBIT_KEY",
+    env_secret="MY_UPBIT_SECRET",
+)
+
+client = UpbitRest.from_config(
+    source="info_yaml",
+    yaml_primary="my_upbit_key",
+    yaml_secret="my_upbit_secret",
+)
+```
+
 Upbit Pocket API keys support up to 5 slots:
 
 ```text
@@ -98,6 +124,19 @@ python -m tools.credentials set coinone
 python -m tools.credentials set binance
 python -m tools.credentials set binance_futures
 python -m tools.credentials list
+```
+
+Use `--keyring-service` to store credentials under a different OS keyring namespace:
+
+```powershell
+python -m tools.credentials --keyring-service MyApp set upbit
+python -m tools.credentials --keyring-service MyApp list
+```
+
+Keyring item names can also be overridden:
+
+```powershell
+python -m tools.credentials --keyring-service MyApp --keyring-primary my.key --keyring-secret my.secret set upbit
 ```
 
 Upbit Pocket API keys can be registered as separate keyring entries:

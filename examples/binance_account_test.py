@@ -158,6 +158,14 @@ def main() -> None:
         choices=["auto", "env", "keyring", "info_yaml"],
         default="auto",
     )
+    parser.add_argument("--env-prefix", default=None)
+    parser.add_argument("--env-primary", default=None)
+    parser.add_argument("--env-secret", default=None)
+    parser.add_argument("--yaml-primary", default=None)
+    parser.add_argument("--yaml-secret", default=None)
+    parser.add_argument("--keyring-primary", default=None)
+    parser.add_argument("--keyring-secret", default=None)
+    parser.add_argument("--keyring-service", default="TradingTools_KR")
     parser.add_argument(
         "--only",
         choices=["all", "spot", "futures"],
@@ -183,7 +191,18 @@ def main() -> None:
 
     artifacts: list[dict[str, Any]] = []
     if args.only in {"all", "spot"}:
-        spot = BinanceSpotRest.from_config(source=source, file_path=args.info)
+        spot = BinanceSpotRest.from_config(
+            source=source,
+            file_path=args.info,
+            env_prefix=args.env_prefix,
+            env_primary=args.env_primary,
+            env_secret=args.env_secret,
+            yaml_primary=args.yaml_primary,
+            yaml_secret=args.yaml_secret,
+            keyring_primary=args.keyring_primary,
+            keyring_secret=args.keyring_secret,
+            keyring_service=args.keyring_service,
+        )
         artifact, _ = _run_step(
             name="현물 자산 조회",
             slug="spot_balances",
@@ -197,7 +216,18 @@ def main() -> None:
         artifacts.append(artifact)
 
     if args.only in {"all", "futures"}:
-        futures = BinanceFuturesRest.from_config(source=source, file_path=args.info)
+        futures = BinanceFuturesRest.from_config(
+            source=source,
+            file_path=args.info,
+            env_prefix=args.env_prefix,
+            env_primary=args.env_primary,
+            env_secret=args.env_secret,
+            yaml_primary=args.yaml_primary,
+            yaml_secret=args.yaml_secret,
+            keyring_primary=args.keyring_primary,
+            keyring_secret=args.keyring_secret,
+            keyring_service=args.keyring_service,
+        )
         artifact, _ = _run_step(
             name="USD-M 선물 자산 조회",
             slug="futures_balances",

@@ -194,6 +194,14 @@ def main() -> None:
         default="auto",
         help="credential source. auto tries env, keyring, then info.yaml.",
     )
+    parser.add_argument("--env-prefix", default=None)
+    parser.add_argument("--env-primary", default=None)
+    parser.add_argument("--env-secret", default=None)
+    parser.add_argument("--yaml-primary", default=None)
+    parser.add_argument("--yaml-secret", default=None)
+    parser.add_argument("--keyring-primary", default=None)
+    parser.add_argument("--keyring-secret", default=None)
+    parser.add_argument("--keyring-service", default="TradingTools_KR")
     parser.add_argument("--ticker", default="btc-krw")
     parser.add_argument("--quote-currency", default="KRW")
     parser.add_argument("--base-currency", default="BTC")
@@ -221,9 +229,28 @@ def main() -> None:
             source=source,
             file_path=args.info,
             pocket_index=args.pocket_index,
+            env_prefix=args.env_prefix,
+            env_primary=args.env_primary,
+            env_secret=args.env_secret,
+            yaml_primary=args.yaml_primary,
+            yaml_secret=args.yaml_secret,
+            keyring_primary=args.keyring_primary,
+            keyring_secret=args.keyring_secret,
+            keyring_service=args.keyring_service,
         )
         if args.use_pocket_key
-        else UpbitRest.from_config(source=source, file_path=args.info)
+        else UpbitRest.from_config(
+            source=source,
+            file_path=args.info,
+            env_prefix=args.env_prefix,
+            env_primary=args.env_primary,
+            env_secret=args.env_secret,
+            yaml_primary=args.yaml_primary,
+            yaml_secret=args.yaml_secret,
+            keyring_primary=args.keyring_primary,
+            keyring_secret=args.keyring_secret,
+            keyring_service=args.keyring_service,
+        )
     )
 
     print("[INFO] Upbit live test started")

@@ -9,6 +9,7 @@ from typing import Any, Literal
 CredentialSource = Literal["auto", "env", "keyring", "info_yaml"]
 
 KEYRING_SERVICE = "TradingTools_KR"
+ENV_PREFIX = "TRADINGTOOLS"
 
 
 class CredentialError(Exception):
@@ -230,11 +231,54 @@ def get_credential_spec(exchange: str) -> CredentialSpec:
         raise CredentialError(f"unsupported exchange '{exchange}'. supported: {supported}") from error
 
 
+def _normalize_env_prefix(env_prefix: str | None) -> str | None:
+    if env_prefix is None:
+        return None
+    normalized = env_prefix.strip().upper()
+    if not normalized:
+        raise ValueError("env_prefix must not be empty")
+    return normalized.rstrip("_")
+
+
+def _env_names(spec: CredentialSpec, *, env_prefix: str | None = None) -> tuple[str, str]:
+    prefix = _normalize_env_prefix(env_prefix)
+    if prefix is None:
+        return spec.env_primary, spec.env_secret
+    exchange_part = spec.exchange.upper()
+    primary_part = spec.primary_name.upper()
+    secret_part = spec.secret_name.upper()
+    return f"{prefix}_{exchange_part}_{primary_part}", f"{prefix}_{exchange_part}_{secret_part}"
+
+
+def _resolve_pair(
+    default_primary: str,
+    default_secret: str,
+    *,
+    primary_override: str | None = None,
+    secret_override: str | None = None,
+) -> tuple[str, str]:
+    primary = primary_override.strip() if primary_override is not None else default_primary
+    secret = secret_override.strip() if secret_override is not None else default_secret
+    if not primary:
+        raise ValueError("primary credential key name must not be empty")
+    if not secret:
+        raise ValueError("secret credential key name must not be empty")
+    return primary, secret
+
+
 def load_credentials(
     exchange: str,
     *,
     source: CredentialSource = "auto",
     file_path: str = "info.yaml",
+    env_prefix: str | None = None,
+    env_primary: str | None = None,
+    env_secret: str | None = None,
+    yaml_primary: str | None = None,
+    yaml_secret: str | None = None,
+    keyring_primary: str | None = None,
+    keyring_secret: str | None = None,
+    keyring_service: str = KEYRING_SERVICE,
 ) -> ExchangeCredentials:
     spec = get_credential_spec(exchange)
 
@@ -242,7 +286,19 @@ def load_credentials(
         errors: list[str] = []
         for candidate in ("env", "keyring", "info_yaml"):
             try:
-                return load_credentials(exchange, source=candidate, file_path=file_path)
+                return load_credentials(
+                    exchange,
+                    source=candidate,
+                    file_path=file_path,
+                    env_prefix=env_prefix,
+                    env_primary=env_primary,
+                    env_secret=env_secret,
+                    yaml_primary=yaml_primary,
+                    yaml_secret=yaml_secret,
+                    keyring_primary=keyring_primary,
+                    keyring_secret=keyring_secret,
+                    keyring_service=keyring_service,
+                )
             except CredentialNotFoundError as error:
                 errors.append(str(error))
                 continue
@@ -254,21 +310,49 @@ def load_credentials(
         raise CredentialNotFoundError("; ".join(errors))
 
     if source == "env":
-        return _load_env(spec)
+        return _load_env(
+            spec,
+            env_prefix=env_prefix,
+            env_primary=env_primary,
+            env_secret=env_secret,
+        )
     if source == "keyring":
-        return _load_keyring(spec)
+        return _load_keyring(
+            spec,
+            keyring_service=keyring_service,
+            keyring_primary=keyring_primary,
+            keyring_secret=keyring_secret,
+        )
     if source == "info_yaml":
-        return _load_info_yaml(spec, file_path=file_path)
+        return _load_info_yaml(
+            spec,
+            file_path=file_path,
+            yaml_primary=yaml_primary,
+            yaml_secret=yaml_secret,
+        )
 
     raise CredentialError(f"unsupported credential source '{source}'")
 
 
-def _load_env(spec: CredentialSpec) -> ExchangeCredentials:
-    primary = os.environ.get(spec.env_primary)
-    secret = os.environ.get(spec.env_secret)
+def _load_env(
+    spec: CredentialSpec,
+    *,
+    env_prefix: str | None = None,
+    env_primary: str | None = None,
+    env_secret: str | None = None,
+) -> ExchangeCredentials:
+    default_primary, default_secret = _env_names(spec, env_prefix=env_prefix)
+    resolved_primary, resolved_secret = _resolve_pair(
+        default_primary,
+        default_secret,
+        primary_override=env_primary,
+        secret_override=env_secret,
+    )
+    primary = os.environ.get(resolved_primary)
+    secret = os.environ.get(resolved_secret)
     if not primary or not secret:
         raise CredentialNotFoundError(
-            f"env credential missing: {spec.env_primary} or {spec.env_secret}"
+            f"env credential missing: {resolved_primary} or {resolved_secret}"
         )
     return ExchangeCredentials(
         exchange=spec.exchange,
@@ -279,17 +363,29 @@ def _load_env(spec: CredentialSpec) -> ExchangeCredentials:
     )
 
 
-def _load_info_yaml(spec: CredentialSpec, *, file_path: str) -> ExchangeCredentials:
+def _load_info_yaml(
+    spec: CredentialSpec,
+    *,
+    file_path: str,
+    yaml_primary: str | None = None,
+    yaml_secret: str | None = None,
+) -> ExchangeCredentials:
     path = Path(file_path)
     if not path.exists():
         raise CredentialNotFoundError(f"{file_path} not found")
 
     config = _parse_simple_yaml_mapping(path.read_text(encoding="utf-8"))
-    primary = config.get(spec.yaml_primary)
-    secret = config.get(spec.yaml_secret)
+    resolved_primary, resolved_secret = _resolve_pair(
+        spec.yaml_primary,
+        spec.yaml_secret,
+        primary_override=yaml_primary,
+        secret_override=yaml_secret,
+    )
+    primary = config.get(resolved_primary)
+    secret = config.get(resolved_secret)
     if not primary or not secret:
         raise CredentialNotFoundError(
-            f"info.yaml credential missing: {spec.yaml_primary} or {spec.yaml_secret}"
+            f"info.yaml credential missing: {resolved_primary} or {resolved_secret}"
         )
     return ExchangeCredentials(
         exchange=spec.exchange,
@@ -300,13 +396,25 @@ def _load_info_yaml(spec: CredentialSpec, *, file_path: str) -> ExchangeCredenti
     )
 
 
-def _load_keyring(spec: CredentialSpec) -> ExchangeCredentials:
+def _load_keyring(
+    spec: CredentialSpec,
+    *,
+    keyring_service: str = KEYRING_SERVICE,
+    keyring_primary: str | None = None,
+    keyring_secret: str | None = None,
+) -> ExchangeCredentials:
     keyring = _import_keyring()
-    primary = keyring.get_password(KEYRING_SERVICE, spec.keyring_primary)
-    secret = keyring.get_password(KEYRING_SERVICE, spec.keyring_secret)
+    resolved_primary, resolved_secret = _resolve_pair(
+        spec.keyring_primary,
+        spec.keyring_secret,
+        primary_override=keyring_primary,
+        secret_override=keyring_secret,
+    )
+    primary = keyring.get_password(keyring_service, resolved_primary)
+    secret = keyring.get_password(keyring_service, resolved_secret)
     if not primary or not secret:
         raise CredentialNotFoundError(
-            f"keyring credential missing: {spec.keyring_primary} or {spec.keyring_secret}"
+            f"keyring credential missing: {resolved_primary} or {resolved_secret}"
         )
     return ExchangeCredentials(
         exchange=spec.exchange,
@@ -322,6 +430,9 @@ def save_credentials_to_keyring(
     *,
     primary_key: str,
     secret_key: str,
+    keyring_service: str = KEYRING_SERVICE,
+    keyring_primary: str | None = None,
+    keyring_secret: str | None = None,
 ) -> None:
     if not primary_key:
         raise ValueError("primary_key is required")
@@ -330,25 +441,55 @@ def save_credentials_to_keyring(
 
     spec = get_credential_spec(exchange)
     keyring = _import_keyring()
-    keyring.set_password(KEYRING_SERVICE, spec.keyring_primary, primary_key)
-    keyring.set_password(KEYRING_SERVICE, spec.keyring_secret, secret_key)
+    resolved_primary, resolved_secret = _resolve_pair(
+        spec.keyring_primary,
+        spec.keyring_secret,
+        primary_override=keyring_primary,
+        secret_override=keyring_secret,
+    )
+    keyring.set_password(keyring_service, resolved_primary, primary_key)
+    keyring.set_password(keyring_service, resolved_secret, secret_key)
 
 
-def delete_credentials_from_keyring(exchange: str) -> None:
+def delete_credentials_from_keyring(
+    exchange: str,
+    *,
+    keyring_service: str = KEYRING_SERVICE,
+    keyring_primary: str | None = None,
+    keyring_secret: str | None = None,
+) -> None:
     spec = get_credential_spec(exchange)
     keyring = _import_keyring()
-    for key in (spec.keyring_primary, spec.keyring_secret):
+    resolved_primary, resolved_secret = _resolve_pair(
+        spec.keyring_primary,
+        spec.keyring_secret,
+        primary_override=keyring_primary,
+        secret_override=keyring_secret,
+    )
+    for key in (resolved_primary, resolved_secret):
         try:
-            keyring.delete_password(KEYRING_SERVICE, key)
+            keyring.delete_password(keyring_service, key)
         except Exception as error:
             if error.__class__.__name__ == "PasswordDeleteError":
                 continue
             raise
 
 
-def keyring_credentials_exist(exchange: str) -> bool:
+def keyring_credentials_exist(
+    exchange: str,
+    *,
+    keyring_service: str = KEYRING_SERVICE,
+    keyring_primary: str | None = None,
+    keyring_secret: str | None = None,
+) -> bool:
     try:
-        load_credentials(exchange, source="keyring")
+        load_credentials(
+            exchange,
+            source="keyring",
+            keyring_service=keyring_service,
+            keyring_primary=keyring_primary,
+            keyring_secret=keyring_secret,
+        )
     except CredentialError:
         return False
     return True
@@ -369,6 +510,7 @@ __all__ = [
     "CredentialNotFoundError",
     "CredentialSource",
     "ExchangeCredentials",
+    "ENV_PREFIX",
     "KEYRING_SERVICE",
     "SPECS",
     "delete_credentials_from_keyring",

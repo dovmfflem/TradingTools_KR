@@ -29,6 +29,34 @@ class CredentialsTest(unittest.TestCase):
         self.assertEqual(credentials.secret_key, "env-secret")
         self.assertEqual(credentials.source, "env")
 
+    def test_load_from_custom_env_prefix(self) -> None:
+        env = {
+            "MYAPP_COINONE_ACCESS_TOKEN": "custom-token",
+            "MYAPP_COINONE_SECRET_KEY": "custom-secret",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            credentials = load_credentials("coinone", source="env", env_prefix="MYAPP")
+
+        self.assertEqual(credentials.access_token, "custom-token")
+        self.assertEqual(credentials.secret_key, "custom-secret")
+        self.assertEqual(credentials.source, "env")
+
+    def test_load_from_custom_env_names(self) -> None:
+        env = {
+            "ANY_PRIMARY": "custom-api",
+            "ANY_SECRET": "custom-secret",
+        }
+        with patch.dict("os.environ", env, clear=True):
+            credentials = load_credentials(
+                "upbit",
+                source="env",
+                env_primary="ANY_PRIMARY",
+                env_secret="ANY_SECRET",
+            )
+
+        self.assertEqual(credentials.api_key, "custom-api")
+        self.assertEqual(credentials.secret_key, "custom-secret")
+
     def test_load_from_info_yaml(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "info.yaml"
@@ -51,6 +79,30 @@ class CredentialsTest(unittest.TestCase):
         self.assertEqual(credentials.access_token, "yaml-token")
         self.assertEqual(credentials.secret_key, "yaml-secret")
         self.assertEqual(credentials.source, "info_yaml")
+
+    def test_load_from_custom_info_yaml_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "info.yaml"
+            path.write_text(
+                "\n".join(
+                    [
+                        'my_api: "yaml-api"',
+                        'my_secret: "yaml-secret"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            credentials = load_credentials(
+                "bithumb",
+                source="info_yaml",
+                file_path=str(path),
+                yaml_primary="my_api",
+                yaml_secret="my_secret",
+            )
+
+        self.assertEqual(credentials.api_key, "yaml-api")
+        self.assertEqual(credentials.secret_key, "yaml-secret")
 
     def test_auto_prefers_env_over_info_yaml(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -201,6 +253,60 @@ class CredentialsTest(unittest.TestCase):
 
         self.assertEqual(store[(KEYRING_SERVICE, "coinone.access_token")], "token")
         self.assertEqual(store[(KEYRING_SERVICE, "coinone.secret_key")], "secret")
+
+    def test_custom_keyring_service_with_mock_backend(self) -> None:
+        store: dict[tuple[str, str], str] = {}
+        fake_keyring = types.SimpleNamespace(
+            get_password=lambda service, key: store.get((service, key)),
+            set_password=lambda service, key, value: store.__setitem__((service, key), value),
+            delete_password=lambda service, key: store.pop((service, key)),
+        )
+
+        with patch.dict("sys.modules", {"keyring": fake_keyring}):
+            save_credentials_to_keyring(
+                "binance",
+                primary_key="binance-api",
+                secret_key="binance-secret",
+                keyring_service="OtherProject",
+            )
+            credentials = load_credentials(
+                "binance",
+                source="keyring",
+                keyring_service="OtherProject",
+            )
+
+        self.assertEqual(credentials.api_key, "binance-api")
+        self.assertEqual(credentials.secret_key, "binance-secret")
+        self.assertIn(("OtherProject", "binance.api_key"), store)
+
+    def test_custom_keyring_item_names_with_mock_backend(self) -> None:
+        store: dict[tuple[str, str], str] = {}
+        fake_keyring = types.SimpleNamespace(
+            get_password=lambda service, key: store.get((service, key)),
+            set_password=lambda service, key, value: store.__setitem__((service, key), value),
+            delete_password=lambda service, key: store.pop((service, key)),
+        )
+
+        with patch.dict("sys.modules", {"keyring": fake_keyring}):
+            save_credentials_to_keyring(
+                "coinone",
+                primary_key="custom-token",
+                secret_key="custom-secret",
+                keyring_service="OtherProject",
+                keyring_primary="coinone.token.custom",
+                keyring_secret="coinone.secret.custom",
+            )
+            credentials = load_credentials(
+                "coinone",
+                source="keyring",
+                keyring_service="OtherProject",
+                keyring_primary="coinone.token.custom",
+                keyring_secret="coinone.secret.custom",
+            )
+
+        self.assertEqual(credentials.access_token, "custom-token")
+        self.assertEqual(credentials.secret_key, "custom-secret")
+        self.assertIn(("OtherProject", "coinone.token.custom"), store)
 
     def test_missing_source_raises_not_found(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
