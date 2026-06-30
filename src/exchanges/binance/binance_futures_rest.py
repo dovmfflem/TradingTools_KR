@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 
 import requests
 
+from src.core.credentials import CredentialError, CredentialSource, load_credentials
 from src.core.event_constants import EXCHANGE_BINANCE_FUTURES, SOURCE_ORDERBOOK
 
 
@@ -128,6 +129,21 @@ class BinanceFuturesRest:
             )
 
         return cls(api_key=str(api_key), secret_key=str(secret_key))
+
+    @classmethod
+    def from_config(
+        cls,
+        *,
+        source: CredentialSource = "auto",
+        file_path: str = "info.yaml",
+    ) -> "BinanceFuturesRest":
+        try:
+            credentials = load_credentials("binance_futures", source=source, file_path=file_path)
+        except CredentialError:
+            if source != "auto":
+                raise
+            credentials = load_credentials("binance", source=source, file_path=file_path)
+        return cls(api_key=credentials.api_key, secret_key=credentials.secret_key)
 
     @staticmethod
     def _build_query_string(payload: dict[str, Any]) -> str:
@@ -441,6 +457,14 @@ class BinanceFuturesRest:
         return data if isinstance(data, dict) else {"data": data}
 
     def get_balances(self) -> list[dict[str, Any]]:
+        data = self._request_signed("GET", "/fapi/v3/balance")
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict) and isinstance(data.get("data"), list):
+            return data["data"]
+        return []
+
+    def get_balances_v2(self) -> list[dict[str, Any]]:
         data = self._request_signed("GET", "/fapi/v2/balance")
         if isinstance(data, list):
             return data

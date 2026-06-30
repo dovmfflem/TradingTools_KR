@@ -138,6 +138,28 @@ SPECS: dict[str, CredentialSpec] = {
         keyring_primary="coinone.access_token",
         keyring_secret="coinone.secret_key",
     ),
+    "binance": CredentialSpec(
+        exchange="binance",
+        primary_name="api_key",
+        secret_name="secret_key",
+        env_primary="TRADINGTOOLS_BINANCE_API_KEY",
+        env_secret="TRADINGTOOLS_BINANCE_SECRET_KEY",
+        yaml_primary="binance_api_key",
+        yaml_secret="binance_secret_key",
+        keyring_primary="binance.api_key",
+        keyring_secret="binance.secret_key",
+    ),
+    "binance_futures": CredentialSpec(
+        exchange="binance_futures",
+        primary_name="api_key",
+        secret_name="secret_key",
+        env_primary="TRADINGTOOLS_BINANCE_FUTURES_API_KEY",
+        env_secret="TRADINGTOOLS_BINANCE_FUTURES_SECRET_KEY",
+        yaml_primary="binance_futures_api_key",
+        yaml_secret="binance_futures_secret_key",
+        keyring_primary="binance_futures.api_key",
+        keyring_secret="binance_futures.secret_key",
+    ),
 }
 
 

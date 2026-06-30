@@ -68,6 +68,10 @@ TRADINGTOOLS_BITHUMB_API_KEY
 TRADINGTOOLS_BITHUMB_SECRET_KEY
 TRADINGTOOLS_COINONE_ACCESS_TOKEN
 TRADINGTOOLS_COINONE_SECRET_KEY
+TRADINGTOOLS_BINANCE_API_KEY
+TRADINGTOOLS_BINANCE_SECRET_KEY
+TRADINGTOOLS_BINANCE_FUTURES_API_KEY
+TRADINGTOOLS_BINANCE_FUTURES_SECRET_KEY
 ```
 
 Upbit Pocket API keys support up to 5 slots:
@@ -91,6 +95,8 @@ python -m pip install -r requirements-keyring.txt
 python -m tools.credentials set upbit
 python -m tools.credentials set bithumb
 python -m tools.credentials set coinone
+python -m tools.credentials set binance
+python -m tools.credentials set binance_futures
 python -m tools.credentials list
 ```
 
@@ -120,6 +126,7 @@ Each implemented Korean exchange has an `api_surface.py` file that acts like a l
 src/exchanges/upbit/api_surface.py
 src/exchanges/bithumb/api_surface.py
 src/exchanges/coinone/api_surface.py
+src/exchanges/binance/api_surface.py
 ```
 
 These files record implemented methods, endpoint paths, authentication requirements, and official documentation URLs.
@@ -148,6 +155,7 @@ python examples/upbit_quotation_test.py
 python examples/upbit_exchange_test.py --source keyring
 python examples/bithumb_exchange_test.py --source keyring
 python examples/coinone_exchange_test.py --source keyring
+python examples/binance_account_test.py --source keyring
 python examples/upbit_live_test.py --private-read
 python examples/upbit_live_test.py --source keyring --private-read
 python examples/upbit_live_test.py --source keyring --private-read --trade

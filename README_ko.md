@@ -66,6 +66,10 @@ TRADINGTOOLS_BITHUMB_API_KEY
 TRADINGTOOLS_BITHUMB_SECRET_KEY
 TRADINGTOOLS_COINONE_ACCESS_TOKEN
 TRADINGTOOLS_COINONE_SECRET_KEY
+TRADINGTOOLS_BINANCE_API_KEY
+TRADINGTOOLS_BINANCE_SECRET_KEY
+TRADINGTOOLS_BINANCE_FUTURES_API_KEY
+TRADINGTOOLS_BINANCE_FUTURES_SECRET_KEY
 ```
 
 업비트 포켓 API 키는 최대 5개 슬롯을 지원합니다.
@@ -89,6 +93,8 @@ python -m pip install -r requirements-keyring.txt
 python -m tools.credentials set upbit
 python -m tools.credentials set bithumb
 python -m tools.credentials set coinone
+python -m tools.credentials set binance
+python -m tools.credentials set binance_futures
 python -m tools.credentials list
 ```
 
@@ -118,6 +124,7 @@ client = UpbitRest.from_pocket_config(source="auto", pocket_index=1)
 src/exchanges/upbit/api_surface.py
 src/exchanges/bithumb/api_surface.py
 src/exchanges/coinone/api_surface.py
+src/exchanges/binance/api_surface.py
 ```
 
 각 파일에는 구현된 메서드, endpoint path, 인증 필요 여부, 공식 문서 URL이 기록되어 있습니다.
@@ -146,6 +153,7 @@ python examples/upbit_quotation_test.py
 python examples/upbit_exchange_test.py --source keyring
 python examples/bithumb_exchange_test.py --source keyring
 python examples/coinone_exchange_test.py --source keyring
+python examples/binance_account_test.py --source keyring
 python examples/upbit_live_test.py --private-read
 python examples/upbit_live_test.py --source keyring --private-read
 python examples/upbit_live_test.py --source keyring --private-read --trade

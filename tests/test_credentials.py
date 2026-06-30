@@ -109,6 +109,35 @@ class CredentialsTest(unittest.TestCase):
             "upbit_pocket_1_api_key",
         )
 
+    def test_binance_specs_include_spot_and_futures(self) -> None:
+        self.assertEqual(SPECS["binance"].env_primary, "TRADINGTOOLS_BINANCE_API_KEY")
+        self.assertEqual(
+            SPECS["binance_futures"].env_primary,
+            "TRADINGTOOLS_BINANCE_FUTURES_API_KEY",
+        )
+
+    def test_load_binance_futures_from_info_yaml(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "info.yaml"
+            path.write_text(
+                "\n".join(
+                    [
+                        'binance_futures_api_key: "futures-api"',
+                        'binance_futures_secret_key: "futures-secret"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            credentials = load_credentials(
+                "binance_futures",
+                source="info_yaml",
+                file_path=str(path),
+            )
+
+        self.assertEqual(credentials.api_key, "futures-api")
+        self.assertEqual(credentials.secret_key, "futures-secret")
+
     def test_load_upbit_pocket_fifth_slot_from_info_yaml(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "info.yaml"
