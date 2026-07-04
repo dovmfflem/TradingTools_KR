@@ -504,6 +504,10 @@ class BinanceFuturesRest:
             return data["data"]
         return []
 
+    def get_account(self) -> dict[str, Any]:
+        data = self._request_signed("GET", "/fapi/v2/account")
+        return data if isinstance(data, dict) else {"data": data}
+
     def get_position_risk(self, ticker: str) -> list[dict[str, Any]]:
         symbol = _to_symbol(ticker)
         data = self._request_signed(
@@ -511,6 +515,25 @@ class BinanceFuturesRest:
             "/fapi/v2/positionRisk",
             params={"symbol": symbol},
         )
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        if isinstance(data, dict) and isinstance(data.get("data"), list):
+            return [item for item in data["data"] if isinstance(item, dict)]
+        return []
+
+    def get_premium_index(self, ticker: str | None = None) -> list[dict[str, Any]]:
+        params = None
+        if ticker:
+            params = {"symbol": _to_symbol(ticker)}
+        data = self._request_public("GET", "/fapi/v1/premiumIndex", params=params)
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        if isinstance(data, dict):
+            return [data]
+        return []
+
+    def get_funding_info(self) -> list[dict[str, Any]]:
+        data = self._request_public("GET", "/fapi/v1/fundingInfo")
         if isinstance(data, list):
             return [item for item in data if isinstance(item, dict)]
         if isinstance(data, dict) and isinstance(data.get("data"), list):
