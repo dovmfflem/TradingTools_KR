@@ -508,12 +508,12 @@ class BinanceFuturesRest:
         data = self._request_signed("GET", "/fapi/v2/account")
         return data if isinstance(data, dict) else {"data": data}
 
-    def get_position_risk(self, ticker: str) -> list[dict[str, Any]]:
-        symbol = _to_symbol(ticker)
+    def get_position_risk(self, ticker: str | None = None) -> list[dict[str, Any]]:
+        params = {"symbol": _to_symbol(ticker)} if ticker else None
         data = self._request_signed(
             "GET",
             "/fapi/v2/positionRisk",
-            params={"symbol": symbol},
+            params=params,
         )
         if isinstance(data, list):
             return [item for item in data if isinstance(item, dict)]
