@@ -221,3 +221,159 @@ class BinanceSpotRest:
         if not isinstance(balances, list):
             return []
         return [item for item in balances if isinstance(item, dict)]
+
+    def list_sub_accounts(
+        self,
+        *,
+        email: str | None = None,
+        page: int | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        data = self._request_signed(
+            "GET",
+            "/sapi/v1/sub-account/list",
+            params={"email": email, "page": page, "limit": limit},
+        )
+        return data if isinstance(data, dict) else {"subAccounts": data}
+
+    def get_sub_account_assets(self, email: str) -> dict[str, Any]:
+        data = self._request_signed(
+            "GET",
+            "/sapi/v4/sub-account/assets",
+            params={"email": email},
+        )
+        return data if isinstance(data, dict) else {"balances": data}
+
+    def get_margin_account(self) -> dict[str, Any]:
+        data = self._request_signed("GET", "/sapi/v1/margin/account")
+        return data if isinstance(data, dict) else {"data": data}
+
+    def get_sub_account_margin_account(self, email: str) -> dict[str, Any]:
+        data = self._request_signed(
+            "GET",
+            "/sapi/v1/sub-account/margin/account",
+            params={"email": email},
+        )
+        return data if isinstance(data, dict) else {"data": data}
+
+    def get_sub_account_futures_account(self, email: str, *, futures_type: int = 1) -> dict[str, Any]:
+        data = self._request_signed(
+            "GET",
+            "/sapi/v2/sub-account/futures/account",
+            params={"email": email, "futuresType": futures_type},
+        )
+        return data if isinstance(data, dict) else {"data": data}
+
+    def universal_transfer(
+        self,
+        *,
+        from_account_type: str,
+        to_account_type: str,
+        asset: str,
+        amount: str | float,
+        from_email: str | None = None,
+        to_email: str | None = None,
+        client_tran_id: str | None = None,
+    ) -> dict[str, Any]:
+        data = self._request_signed(
+            "POST",
+            "/sapi/v1/sub-account/universalTransfer",
+            params={
+                "fromEmail": from_email,
+                "toEmail": to_email,
+                "fromAccountType": from_account_type,
+                "toAccountType": to_account_type,
+                "asset": asset,
+                "amount": amount,
+                "clientTranId": client_tran_id,
+            },
+        )
+        return data if isinstance(data, dict) else {"data": data}
+
+    def list_universal_transfer_history(
+        self,
+        *,
+        from_email: str | None = None,
+        to_email: str | None = None,
+        client_tran_id: str | None = None,
+        page: int | None = None,
+        limit: int | None = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
+    ) -> dict[str, Any]:
+        data = self._request_signed(
+            "GET",
+            "/sapi/v1/sub-account/universalTransfer",
+            params={
+                "fromEmail": from_email,
+                "toEmail": to_email,
+                "clientTranId": client_tran_id,
+                "page": page,
+                "limit": limit,
+                "startTime": start_time,
+                "endTime": end_time,
+            },
+        )
+        return data if isinstance(data, dict) else {"result": data}
+
+    def list_withdraw_addresses(self) -> list[dict[str, Any]]:
+        data = self._request_signed("GET", "/sapi/v1/capital/withdraw/address/list")
+        return data if isinstance(data, list) else []
+
+    def get_capital_config(self) -> list[dict[str, Any]]:
+        data = self._request_signed("GET", "/sapi/v1/capital/config/getall")
+        return data if isinstance(data, list) else []
+
+    def create_withdraw(
+        self,
+        *,
+        coin: str,
+        address: str,
+        amount: str | float,
+        network: str | None = None,
+        address_tag: str | None = None,
+        withdraw_order_id: str | None = None,
+        transaction_fee_flag: bool | None = None,
+        name: str | None = None,
+    ) -> dict[str, Any]:
+        data = self._request_signed(
+            "POST",
+            "/sapi/v1/capital/withdraw/apply",
+            params={
+                "coin": coin,
+                "address": address,
+                "amount": amount,
+                "network": network,
+                "addressTag": address_tag,
+                "withdrawOrderId": withdraw_order_id,
+                "transactionFeeFlag": transaction_fee_flag,
+                "name": name,
+            },
+        )
+        return data if isinstance(data, dict) else {"data": data}
+
+    def list_withdraw_history(
+        self,
+        *,
+        coin: str | None = None,
+        withdraw_order_id: str | None = None,
+        status: int | None = None,
+        offset: int | None = None,
+        limit: int | None = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
+    ) -> list[dict[str, Any]]:
+        data = self._request_signed(
+            "GET",
+            "/sapi/v1/capital/withdraw/history",
+            params={
+                "coin": coin,
+                "withdrawOrderId": withdraw_order_id,
+                "status": status,
+                "offset": offset,
+                "limit": limit,
+                "startTime": start_time,
+                "endTime": end_time,
+            },
+        )
+        return data if isinstance(data, list) else []

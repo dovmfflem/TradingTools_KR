@@ -405,6 +405,29 @@ class BinanceFuturesRest:
         )
         return data if isinstance(data, dict) else {"data": data}
 
+    def get_user_trades(
+        self,
+        ticker: str,
+        order_id: int | str | None = None,
+    ) -> list[dict[str, Any]]:
+        symbol = _to_symbol(ticker)
+        params: dict[str, Any] = {"symbol": symbol}
+        if order_id is not None:
+            if str(order_id).strip() == "":
+                raise ValueError("order_id must not be empty")
+            params["orderId"] = int(order_id)
+
+        data = self._request_signed(
+            "GET",
+            "/fapi/v1/userTrades",
+            params=params,
+        )
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        if isinstance(data, dict) and isinstance(data.get("data"), list):
+            return [item for item in data["data"] if isinstance(item, dict)]
+        return []
+
     def get_open_orders(self, ticker: str) -> list[dict[str, Any]]:
         symbol = _to_symbol(ticker)
         data = self._request_signed(

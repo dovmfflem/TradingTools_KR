@@ -872,7 +872,7 @@ class UpbitRest:
             raise ValueError("uuid_value is required")
         data = self._request(
             "GET",
-            "/v1/pockets/asset",
+            "/v1/pockets/assets",
             params={"uuid": uuid_value},
         )
         return data if isinstance(data, list) else []
@@ -893,7 +893,7 @@ class UpbitRest:
             "amount": str(amount),
             "identifier": identifier,
         }
-        data = self._request("POST", "/v1/pockets/transfers", json_body=body)
+        data = self._request("POST", "/v1/pockets/universal_transfers", json_body=body)
         return data if isinstance(data, dict) else {"data": data}
 
     def list_main_pocket_transfers(
@@ -912,7 +912,7 @@ class UpbitRest:
     ) -> list[dict[str, Any]]:
         data = self._request(
             "GET",
-            "/v1/pockets/transfers",
+            "/v1/pockets/universal_transfers",
             params={
                 "from": from_uuid,
                 "to": to,
