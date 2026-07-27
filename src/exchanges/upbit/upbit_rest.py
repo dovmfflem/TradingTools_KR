@@ -93,6 +93,7 @@ def _to_market_code(ticker: str) -> str:
     if (
         len(raw_parts) == 2
         and raw_parts[0].isupper()
+        and raw_parts[1].isupper()
         and first in quote_currencies
     ):
         return f"{first}-{second}"

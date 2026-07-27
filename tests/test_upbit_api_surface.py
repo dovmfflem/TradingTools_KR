@@ -15,10 +15,12 @@ from examples.upbit_exchange_test import _find_deposit_address_pair
 class UpbitApiSurfaceTest(unittest.TestCase):
     def test_market_code_normalization(self) -> None:
         self.assertEqual(_to_market_code("btc-krw"), "KRW-BTC")
+        self.assertEqual(_to_market_code("BTC-krw"), "KRW-BTC")
         self.assertEqual(_to_market_code("eth-krw"), "KRW-ETH")
         self.assertEqual(_to_market_code("KRW-BTC"), "KRW-BTC")
         self.assertEqual(_to_market_code("BTC-ETH"), "BTC-ETH")
         self.assertEqual(_to_upbit_market_code("btc-krw"), "KRW-BTC")
+        self.assertEqual(_to_upbit_market_code("BTC-krw"), "KRW-BTC")
         self.assertEqual(_to_upbit_market_code("KRW-BTC"), "KRW-BTC")
 
     def test_deposit_address_pair_prefers_requested_pair(self) -> None:
