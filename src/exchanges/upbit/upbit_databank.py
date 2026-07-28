@@ -663,6 +663,9 @@ class UpbitMyOrder:
         self._ping_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._send_lock = threading.Lock()
+        self._health_lock = threading.Lock()
+        self._ping_failed_event = threading.Event()
+        self._ping_failure_reason = ""
 
     @classmethod
     def from_info_yaml(cls, file_path: str = "info.yaml") -> "UpbitMyOrder":
@@ -696,6 +699,9 @@ class UpbitMyOrder:
             )
 
         self._stop_event.clear()
+        self._ping_failed_event.clear()
+        with self._health_lock:
+            self._ping_failure_reason = ""
         self._ws = websocket.create_connection(
             self.url,
             timeout=self.timeout_seconds,
@@ -713,11 +719,17 @@ class UpbitMyOrder:
                     break
                 try:
                     self._ws.ping("keepalive")
-                except Exception:
+                except Exception as error:
+                    self._mark_ping_failed(error)
                     break
 
         self._ping_thread = threading.Thread(target=_loop, daemon=True)
         self._ping_thread.start()
+
+    def _mark_ping_failed(self, error: Exception) -> None:
+        with self._health_lock:
+            self._ping_failure_reason = f"{type(error).__name__}: {error}"
+        self._ping_failed_event.set()
 
     def close(self) -> None:
         self._stop_event.set()
@@ -733,6 +745,16 @@ class UpbitMyOrder:
             except Exception:
                 pass
             self._ws = None
+
+    def is_healthy(self) -> bool:
+        ws = self._ws
+        if ws is None or self._ping_failed_event.is_set():
+            return False
+        return bool(getattr(ws, "connected", True))
+
+    def connection_failure(self) -> str:
+        with self._health_lock:
+            return self._ping_failure_reason
 
     def send_request(
         self,
@@ -774,11 +796,21 @@ class UpbitMyOrder:
     def recv_once(self) -> dict[str, Any] | str | None:
         if self._ws is None:
             raise RuntimeError("websocket is not connected")
+        if self._ping_failed_event.is_set():
+            raise ConnectionError(
+                f"websocket ping failed: {self.connection_failure() or 'unknown error'}"
+            )
 
         try:
             raw = self._ws.recv()
         except Exception as error:
             if error.__class__.__name__ == "WebSocketTimeoutException":
+                if self._ping_failed_event.is_set():
+                    raise ConnectionError(
+                        f"websocket ping failed: {self.connection_failure() or 'unknown error'}"
+                    ) from error
+                if not bool(getattr(self._ws, "connected", True)):
+                    raise ConnectionError("websocket connection is closed") from error
                 return None
             raise
 
