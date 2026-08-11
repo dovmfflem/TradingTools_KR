@@ -393,15 +393,26 @@ class BinanceFuturesRest:
             "updated_at": time.time(),
         }
 
-    def get_order(self, order_id: int | str, ticker: str) -> dict[str, Any]:
-        if str(order_id).strip() == "":
-            raise ValueError("order_id is required")
+    def get_order(
+        self,
+        order_id: int | str | None,
+        ticker: str,
+        *,
+        client_order_id: str | None = None,
+    ) -> dict[str, Any]:
+        if order_id is None and not str(client_order_id or "").strip():
+            raise ValueError("order_id or client_order_id is required")
 
         symbol = _to_symbol(ticker)
+        params: dict[str, Any] = {"symbol": symbol}
+        if order_id is not None and str(order_id).strip():
+            params["orderId"] = int(order_id)
+        else:
+            params["origClientOrderId"] = str(client_order_id).strip()
         data = self._request_signed(
             "GET",
             "/fapi/v1/order",
-            params={"symbol": symbol, "orderId": int(order_id)},
+            params=params,
         )
         return data if isinstance(data, dict) else {"data": data}
 
@@ -454,6 +465,7 @@ class BinanceFuturesRest:
         position_side: str | None = None,
         close_position: bool | None = None,
         working_type: str | None = None,
+        client_order_id: str | None = None,
     ) -> dict[str, Any]:
         side_upper = side.strip().upper()
         type_upper = order_type.strip().upper()
@@ -492,6 +504,13 @@ class BinanceFuturesRest:
             body["closePosition"] = "true" if close_position else "false"
         if working_type is not None:
             body["workingType"] = working_type.strip().upper()
+        if client_order_id is not None:
+            normalized_client_order_id = str(client_order_id).strip()
+            if not normalized_client_order_id:
+                raise ValueError("client_order_id must not be empty")
+            if len(normalized_client_order_id) > 36:
+                raise ValueError("client_order_id must be 36 characters or fewer")
+            body["newClientOrderId"] = normalized_client_order_id
 
         if type_upper == "LIMIT" and price is None:
             raise ValueError("limit order requires price")

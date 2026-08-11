@@ -46,6 +46,34 @@ class BinanceApiSurfaceTest(unittest.TestCase):
             [("GET", "/fapi/v1/userTrades", {"symbol": "ETHUSDT", "orderId": 123})],
         )
 
+    def test_futures_order_supports_client_order_identity_for_submit_and_lookup(self) -> None:
+        client = BinanceFuturesRest(api_key="api", secret_key="secret")
+        calls = []
+
+        def fake_request(method, path, *, params=None, **_kwargs):
+            calls.append((method, path, params))
+            return {"orderId": 123, "clientOrderId": "gb_test"}
+
+        client._request_signed = fake_request
+        client.place_order(
+            ticker="eth-usdt",
+            side="SELL",
+            order_type="MARKET",
+            quantity="1.25",
+            client_order_id="gb_test",
+        )
+        client.get_order(None, "eth-usdt", client_order_id="gb_test")
+
+        self.assertEqual(calls[0][2]["newClientOrderId"], "gb_test")
+        self.assertEqual(
+            calls[1],
+            (
+                "GET",
+                "/fapi/v1/order",
+                {"symbol": "ETHUSDT", "origClientOrderId": "gb_test"},
+            ),
+        )
+
     def test_spot_balance_parser_returns_list(self) -> None:
         client = BinanceSpotRest(api_key="api", secret_key="secret")
         client.get_account = lambda omit_zero_balances=True: {
