@@ -13,6 +13,18 @@ from examples.upbit_exchange_test import _find_deposit_address_pair
 
 
 class UpbitApiSurfaceTest(unittest.TestCase):
+    def test_query_hash_string_keeps_array_brackets_unescaped(self):
+        self.assertEqual(
+            UpbitRest._build_query_string(
+                {
+                    "market": "KRW-BTC",
+                    "states[]": ["wait", "watch"],
+                    "limit": 10,
+                }
+            ),
+            "market=KRW-BTC&states[]=wait&states[]=watch&limit=10",
+        )
+
     def test_market_code_normalization(self) -> None:
         self.assertEqual(_to_market_code("btc-krw"), "KRW-BTC")
         self.assertEqual(_to_market_code("BTC-krw"), "KRW-BTC")

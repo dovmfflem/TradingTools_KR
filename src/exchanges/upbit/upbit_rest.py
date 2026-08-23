@@ -6,7 +6,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode
 
 import jwt
 import requests
@@ -208,7 +208,7 @@ class UpbitRest:
 
     @staticmethod
     def _build_query_string(payload: dict[str, Any]) -> str:
-        return urlencode(UpbitRest._filter_none(payload), doseq=True)
+        return unquote(urlencode(UpbitRest._filter_none(payload), doseq=True))
 
     @staticmethod
     def _filter_none(payload: dict[str, Any] | None) -> dict[str, Any]:
