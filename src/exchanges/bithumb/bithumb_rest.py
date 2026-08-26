@@ -6,7 +6,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode
 import uuid
 
 os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
@@ -150,7 +150,9 @@ class BithumbRest:
             if value is None:
                 continue
             filtered[key] = value
-        return urlencode(filtered, doseq=True)
+        # Bithumb verifies array parameters against the expanded
+        # ``states[]=done&states[]=cancel`` form, not percent-encoded brackets.
+        return unquote(urlencode(filtered, doseq=True))
 
     @staticmethod
     def _filter_none(payload: dict[str, Any] | None) -> dict[str, Any]:

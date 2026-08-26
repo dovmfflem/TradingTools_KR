@@ -8,6 +8,34 @@ from src.exchanges.coinone.coinone_websocket import CoinoneDataBank, CoinoneMyOr
 
 
 class CoinoneApiSurfaceTest(unittest.TestCase):
+    def test_completed_orders_uses_documented_market_endpoint(self) -> None:
+        client = CoinoneRest(access_token="access", secret_key="secret")
+        calls: list[tuple[str, dict[str, object]]] = []
+
+        def capture(path: str, body: dict[str, object] | None = None) -> dict[str, object]:
+            calls.append((path, body or {}))
+            return {"completed_orders": []}
+
+        client._request = capture  # type: ignore[method-assign]
+        client.list_completed_orders(
+            ticker="BTC-KRW",
+            size=20,
+            from_ts=1_000,
+            to_ts=2_000,
+        )
+
+        self.assertEqual(calls[0][0], "/v2.1/order/completed_orders")
+        self.assertEqual(
+            calls[0][1],
+            {
+                "size": 20,
+                "from_ts": 1_000,
+                "to_ts": 2_000,
+                "quote_currency": "KRW",
+                "target_currency": "BTC",
+            },
+        )
+
     def test_rest_surface_has_no_missing_entries(self) -> None:
         self.assertEqual(API_SURFACE["modules"]["rest"]["missing"], {})
 

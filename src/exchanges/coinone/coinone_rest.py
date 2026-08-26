@@ -569,7 +569,7 @@ class CoinoneRest:
         if ticker:
             quote_currency, target_currency = _to_pair(ticker)
             body.update({"quote_currency": quote_currency, "target_currency": target_currency})
-            return self._request("/v2.1/order/completed_orders/market", body)
+            return self._request("/v2.1/order/completed_orders", body)
         return self._request("/v2.1/order/completed_orders/all", body)
 
     def list_krw_transactions(

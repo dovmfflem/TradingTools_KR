@@ -13,6 +13,18 @@ from examples.bithumb_exchange_test import _find_deposit_address_pair
 
 
 class BithumbApiSurfaceTest(unittest.TestCase):
+    def test_private_array_query_hash_keeps_bracket_notation(self) -> None:
+        self.assertEqual(
+            BithumbRest._build_query_string(
+                {
+                    "market": "KRW-BTC",
+                    "states[]": ["done", "cancel"],
+                    "limit": 20,
+                }
+            ),
+            "market=KRW-BTC&states[]=done&states[]=cancel&limit=20",
+        )
+
     def test_deposit_address_pair_prefers_requested_pair(self) -> None:
         addresses = [
             {"currency": "USDT", "net_type": "TRX"},
