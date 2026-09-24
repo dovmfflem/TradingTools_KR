@@ -1,0 +1,6 @@
+[
+  { "id": "upbit", "name": "업비트", "shortName": "UP", "product": "spot", "quotes": ["KRW"] },
+  { "id": "bithumb", "name": "빗썸", "shortName": "BT", "product": "spot", "quotes": ["KRW"] },
+  { "id": "coinone", "name": "코인원", "shortName": "CO", "product": "spot", "quotes": ["KRW"] },
+  { "id": "korbit", "name": "코빗", "shortName": "KB", "product": "spot", "quotes": ["KRW"] }
+]

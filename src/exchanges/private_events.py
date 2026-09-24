@@ -142,7 +142,7 @@ def normalize_private_asset_event(exchange: str, message: Any) -> dict | None:
         currency = row.get("currency") or row.get("target_currency")
         if not isinstance(currency, str) or not currency:
             continue
-        values = _copy_known(row, {"available": ("balance", "available"),
+        values = _copy_known(row, {"available": ("available", "balance"),
                                    "locked": ("locked", "limit")})
         assets.append({"currency": currency.upper(), **values})
     return {"event": "account", "assets": assets}  # Empty means reconcile via REST.
