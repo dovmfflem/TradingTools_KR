@@ -16,10 +16,14 @@ import requests
 
 from src.core.credentials import CredentialSource, load_credentials
 from src.core.event_constants import EXCHANGE_BITHUMB, SOURCE_ORDERBOOK
+from src.exchanges.api_error import ExchangeRequestError, ExchangeResponseMixin, response_metadata, safe_code, reject_retrying_transport
 
 
-class BithumbRestError(Exception):
+class BithumbRestError(ExchangeRequestError):
     """Raised when a Bithumb REST API request fails."""
+
+    def __init__(self, exchange: str, code: str | None = None, **metadata):
+        super().__init__("bithumb", code or "LEGACY_RESPONSE_INVALID", **metadata)
 
 
 def _strip_comment(line: str) -> str:
@@ -89,7 +93,7 @@ def _to_market_code(ticker: str) -> str:
     return f"{quote}-{base_coin}"
 
 
-class BithumbRest:
+class BithumbRest(ExchangeResponseMixin):
     def __init__(
         self,
         api_key: str,
@@ -198,25 +202,41 @@ class BithumbRest:
     ) -> Any:
         clean_params = self._filter_none(params)
         clean_json_body = self._filter_none(json_body)
+        self._clear_response()
         url = f"{self.api_url}{path}"
-        response = self._session.request(
-            method=method,
-            url=url,
-            headers=self._auth_headers(params=clean_params, json_body=clean_json_body),
-            params=clean_params or None,
-            json=clean_json_body or None,
-            timeout=self.timeout_seconds,
-        )
+        if method != "GET":
+            reject_retrying_transport(self._session, url)
+        try:
+            response = self._session.request(
+                method=method,
+                url=url,
+                headers=self._auth_headers(params=clean_params, json_body=clean_json_body),
+                params=clean_params or None,
+                json=clean_json_body or None,
+                timeout=self.timeout_seconds,
+                allow_redirects=False,
+            )
+        except requests.RequestException:
+            raise BithumbRestError("bithumb", "TRANSPORT_FAILED", outcome_unknown=method != "GET") from None
+
+        self._remember_response(response)
+        status = response.status_code
+        retry_after, remaining = response_metadata(response)
+        if 300 <= status < 400:
+            raise BithumbRestError("bithumb", "REDIRECT_REJECTED", status_code=status,
+                                   rate_limit=remaining, outcome_unknown=method != "GET")
 
         try:
             payload = response.json()
         except ValueError:
-            payload = {"raw": response.text}
+            raise BithumbRestError("bithumb", "INVALID_RESPONSE", status_code=status,
+                                   retry_after_seconds=retry_after, rate_limit=remaining,
+                                   outcome_unknown=method != "GET") from None
 
         if not response.ok:
-            raise BithumbRestError(
-                f"{method} {path} failed (status={response.status_code}): {payload}"
-            )
+            raise BithumbRestError("bithumb", safe_code(payload) if status != 429 else "RATE_LIMITED",
+                                   status_code=status, retry_after_seconds=retry_after,
+                                   rate_limit=remaining, outcome_unknown=method != "GET" and status >= 500)
 
         return payload
 
@@ -228,24 +248,35 @@ class BithumbRest:
         params: dict[str, Any] | None = None,
     ) -> Any:
         clean_params = self._filter_none(params)
+        self._clear_response()
         url = f"{self.api_url}{path}"
-        response = self._session.request(
-            method=method,
-            url=url,
-            headers={"accept": "application/json"},
-            params=clean_params or None,
-            timeout=self.timeout_seconds,
-        )
+        try:
+            response = self._session.request(
+                method=method,
+                url=url,
+                headers={"accept": "application/json"},
+                params=clean_params or None,
+                timeout=self.timeout_seconds,
+                allow_redirects=False,
+            )
+        except requests.RequestException:
+            raise BithumbRestError("bithumb", "TRANSPORT_FAILED") from None
+
+        self._remember_response(response)
+        status = response.status_code
+        retry_after, remaining = response_metadata(response)
+        if 300 <= status < 400:
+            raise BithumbRestError("bithumb", "REDIRECT_REJECTED", status_code=status, rate_limit=remaining)
 
         try:
             payload = response.json()
         except ValueError:
-            payload = {"raw": response.text}
+            raise BithumbRestError("bithumb", "INVALID_RESPONSE", status_code=status,
+                                   retry_after_seconds=retry_after, rate_limit=remaining) from None
 
         if not response.ok:
-            raise BithumbRestError(
-                f"{method} {path} failed (status={response.status_code}): {payload}"
-            )
+            raise BithumbRestError("bithumb", safe_code(payload) if status != 429 else "RATE_LIMITED",
+                                   status_code=status, retry_after_seconds=retry_after, rate_limit=remaining)
 
         return payload
 

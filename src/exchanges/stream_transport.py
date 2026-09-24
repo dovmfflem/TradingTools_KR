@@ -7,6 +7,7 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 import time
 import uuid
 from urllib.parse import urlencode
@@ -40,10 +41,32 @@ def open_public_stream(exchange, *, streams=None, connect=None):
     return _connect(url, connect=connect)
 
 
-def private_connection_config(exchange, access, secret, market):
+def _markets(markets):
+    if isinstance(markets, str):
+        markets = [markets]
+    if not isinstance(markets, (list, tuple)) or not markets:
+        raise ValueError("at least one market is required")
+    result = list(dict.fromkeys(markets))
+    if any(not isinstance(value, str) or not re.fullmatch(r"[A-Z0-9]{2,12}-[A-Z0-9]{2,15}", value)
+           for value in result):
+        raise ValueError("invalid market")
+    return result
+
+
+def private_account_connection_config(exchange, access, secret, markets, *, include_assets=True,
+                                      include_trades=True, account_seq=1):
+    """Build one account stream's wire messages for all requested spot markets.
+
+    Each element of the returned subscriptions list is one WebSocket message.
+    The caller owns connection sharing, acknowledgement, and bounded reconnects.
+    """
+    markets = _markets(markets)
     if exchange == "korbit":
         from .korbit.korbit_rest import private_connection_config as korbit_config
-        return korbit_config(access, secret, market)
+        return korbit_config(access, secret, markets, include_assets=include_assets,
+                             include_trades=include_trades, account_seq=account_seq)
+    if exchange not in PRIVATE_URLS:
+        raise ValueError("unsupported private exchange")
     import jwt
     payload = {"nonce": str(uuid.uuid4()), "timestamp": int(time.time() * 1000)}
     if exchange == "coinone":
@@ -51,15 +74,26 @@ def private_connection_config(exchange, access, secret, market):
         encoded = base64.b64encode(json.dumps(payload).encode()).decode()
         signature = hmac.new(secret.encode(), encoded.encode(), hashlib.sha512).hexdigest()
         headers = [f"X-COINONE-PAYLOAD: {encoded}", f"X-COINONE-SIGNATURE: {signature}"]
-        quote, ticker = market.split("-", 1)
-        subscription = {"request_type": "SUBSCRIBE", "channel": "MYORDER",
-                        "topic": [{"quote_currency": quote, "target_currency": ticker}]}
+        topics = [{"quote_currency": quote, "target_currency": ticker}
+                  for quote, ticker in (market.split("-", 1) for market in markets)]
+        subscriptions = [{"request_type": "SUBSCRIBE", "channel": "MYORDER", "topic": topics}]
+        if include_assets:
+            subscriptions.append({"request_type": "SUBSCRIBE", "channel": "MYASSET"})
     else:
         payload["access_key"] = access
         headers = [f"Authorization: Bearer {jwt.encode(payload, secret, algorithm='HS256')}"]
-        subscription = [{"ticket": str(uuid.uuid4())}, {"type": "myOrder", "codes": [market]},
-                        {"format": "DEFAULT"}]
-    return PRIVATE_URLS[exchange], headers, subscription
+        channels = [{"type": "myOrder", "codes": markets}]
+        if include_assets:
+            channels.append({"type": "myAsset"})
+        subscriptions = [[{"ticket": str(uuid.uuid4())}, *channels, {"format": "DEFAULT"}]]
+    return PRIVATE_URLS[exchange], headers, subscriptions
+
+
+def private_connection_config(exchange, access, secret, market):
+    """Compatibility entry point for existing single-market page workers."""
+    url, headers, subscriptions = private_account_connection_config(
+        exchange, access, secret, market, include_assets=exchange == "korbit", include_trades=False)
+    return url, headers, subscriptions if exchange == "korbit" else subscriptions[0]
 
 
 def open_private_stream(url, headers, *, connect=None):
@@ -68,6 +102,12 @@ def open_private_stream(url, headers, *, connect=None):
     if base not in {*PRIVATE_URLS.values(), "wss://ws-api.korbit.co.kr/v2/private"}:
         raise ValueError("unsupported private stream URL")
     return _connect(url, headers=headers, connect=connect)
+
+
+def private_ping_message(exchange):
+    if exchange != "coinone":
+        raise ValueError("exchange uses WebSocket control ping")
+    return {"request_type": "PING"}
 
 
 def binance_spot_subscription(access, secret, timestamp):

@@ -12,10 +12,12 @@ import requests
 
 from src.core.credentials import CredentialSource, load_credentials
 from src.core.event_constants import EXCHANGE_COINONE, SOURCE_ORDERBOOK
+from src.exchanges.api_error import ExchangeRequestError, ExchangeResponseMixin, response_metadata, safe_code, reject_retrying_transport
 
 
-class CoinoneRestError(Exception):
-    pass
+class CoinoneRestError(ExchangeRequestError):
+    def __init__(self, exchange: str, code: str | None = None, **metadata):
+        super().__init__("coinone", code or "LEGACY_RESPONSE_INVALID", **metadata)
 
 
 def _strip_comment(line: str) -> str:
@@ -90,7 +92,7 @@ def _filter_none(payload: dict[str, Any] | None) -> dict[str, Any]:
     return {key: value for key, value in payload.items() if value is not None}
 
 
-class CoinoneRest:
+class CoinoneRest(ExchangeResponseMixin):
     def __init__(
         self,
         access_token: str,
@@ -162,25 +164,44 @@ class CoinoneRest:
         }
 
     def _request(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        self._clear_response()
+        mutation = path == "/v2.1/order" or path.startswith("/v2.1/order/cancel")
+        if mutation:
+            reject_retrying_transport(self._session, f"{self.api_url}{path}")
         payload = {
             "access_token": self.access_token,
             "nonce": str(uuid.uuid4()),
             **_filter_none(body),
         }
-        response = self._session.post(
-            f"{self.api_url}{path}",
-            headers=self._headers(payload),
-            json=payload,
-            timeout=self.timeout_seconds,
-        )
+        try:
+            response = self._session.post(
+                f"{self.api_url}{path}",
+                headers=self._headers(payload),
+                json=payload,
+                timeout=self.timeout_seconds,
+                allow_redirects=False,
+            )
+        except requests.RequestException:
+            raise CoinoneRestError("coinone", "TRANSPORT_FAILED", outcome_unknown=mutation) from None
+        self._remember_response(response)
+        status = response.status_code
+        retry_after, remaining = response_metadata(response)
+        if 300 <= status < 400:
+            raise CoinoneRestError("coinone", "REDIRECT_REJECTED", status_code=status,
+                                   rate_limit=remaining, outcome_unknown=mutation)
         try:
             data = response.json()
         except ValueError:
-            data = {"raw": response.text}
+            raise CoinoneRestError("coinone", "INVALID_RESPONSE", status_code=status,
+                                   retry_after_seconds=retry_after, rate_limit=remaining,
+                                   outcome_unknown=mutation) from None
         if not response.ok:
-            raise CoinoneRestError(f"POST {path} failed status={response.status_code}: {data}")
+            raise CoinoneRestError("coinone", safe_code(data) if status != 429 else "RATE_LIMITED",
+                                   status_code=status, retry_after_seconds=retry_after,
+                                   rate_limit=remaining, outcome_unknown=mutation and status >= 500)
         if isinstance(data, dict) and str(data.get("result", "")).lower() == "error":
-            raise CoinoneRestError(f"POST {path} error: {data}")
+            raise CoinoneRestError("coinone", safe_code(data), status_code=status,
+                                   retry_after_seconds=retry_after, rate_limit=remaining)
         return data if isinstance(data, dict) else {"data": data}
 
     def _public_get(
@@ -189,19 +210,33 @@ class CoinoneRest:
         *,
         params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        response = self._session.get(
-            f"{self.api_url}{path}",
-            params=_filter_none(params) or None,
-            timeout=self.timeout_seconds,
-        )
+        self._clear_response()
+        try:
+            response = self._session.get(
+                f"{self.api_url}{path}",
+                params=_filter_none(params) or None,
+                timeout=self.timeout_seconds,
+                allow_redirects=False,
+            )
+        except requests.RequestException:
+            raise CoinoneRestError("coinone", "TRANSPORT_FAILED") from None
+        self._remember_response(response)
+        status = response.status_code
+        retry_after, remaining = response_metadata(response)
+        if 300 <= status < 400:
+            raise CoinoneRestError("coinone", "REDIRECT_REJECTED", status_code=status,
+                                   rate_limit=remaining)
         try:
             data = response.json()
         except ValueError:
-            data = {"raw": response.text}
+            raise CoinoneRestError("coinone", "INVALID_RESPONSE", status_code=status,
+                                   retry_after_seconds=retry_after, rate_limit=remaining) from None
         if not response.ok:
-            raise CoinoneRestError(f"GET {path} failed status={response.status_code}: {data}")
+            raise CoinoneRestError("coinone", safe_code(data) if status != 429 else "RATE_LIMITED",
+                                   status_code=status, retry_after_seconds=retry_after, rate_limit=remaining)
         if isinstance(data, dict) and str(data.get("result", "")).lower() == "error":
-            raise CoinoneRestError(f"GET {path} error: {data}")
+            raise CoinoneRestError("coinone", safe_code(data), status_code=status,
+                                   retry_after_seconds=retry_after, rate_limit=remaining)
         return data if isinstance(data, dict) else {"data": data}
 
     @staticmethod
@@ -342,8 +377,12 @@ class CoinoneRest:
             params={"interval": interval, "timestamp": timestamp, "size": size},
         )
 
+    def get_all_balances(self) -> dict[str, Any]:
+        """Return available and locked balances without discarding account fields."""
+        return self._request("/v2.1/account/balance/all")
+
     def get_accounts(self) -> list[dict[str, Any]]:
-        data = self._request("/v2.1/account/balance/all")
+        data = self.get_all_balances()
         balances = data.get("balances")
         if not isinstance(balances, list):
             return []
@@ -370,10 +409,7 @@ class CoinoneRest:
 
     def get_trade_fee(self, ticker: str) -> dict[str, Any]:
         quote_currency, target_currency = _to_pair(ticker)
-        return self._request(
-            "/v2.1/account/trade_fee/market",
-            {"quote_currency": quote_currency, "target_currency": target_currency},
-        )
+        return self._request(f"/v2.1/account/trade_fee/{quote_currency}/{target_currency}")
 
     def get_deposit_address(self, currency: str) -> dict[str, Any]:
         return self._request(
@@ -438,8 +474,8 @@ class CoinoneRest:
         ticker: str,
         user_order_id: str | None = None,
     ) -> dict[str, Any]:
-        if not order_id and not user_order_id:
-            raise ValueError("order_id or user_order_id is required")
+        if bool(order_id) == bool(user_order_id):
+            raise ValueError("exactly one of order_id or user_order_id is required")
         quote_currency, target_currency = _to_pair(ticker)
         return self._request(
             "/v2.1/order/cancel",
@@ -533,11 +569,11 @@ class CoinoneRest:
         order_id: str | None = None,
         user_order_id: str | None = None,
     ) -> dict[str, Any]:
-        if not order_id and not user_order_id:
-            raise ValueError("order_id or user_order_id is required")
+        if bool(order_id) == bool(user_order_id):
+            raise ValueError("exactly one of order_id or user_order_id is required")
         quote_currency, target_currency = _to_pair(ticker)
         return self._request(
-            "/v2.1/order/order_info",
+            "/v2.1/order/detail",
             {
                 "quote_currency": quote_currency,
                 "target_currency": target_currency,
@@ -547,15 +583,7 @@ class CoinoneRest:
         )
 
     def get_order_detail(self, *, ticker: str, order_id: str) -> dict[str, Any]:
-        quote_currency, target_currency = _to_pair(ticker)
-        return self._request(
-            "/v2.1/order",
-            {
-                "quote_currency": quote_currency,
-                "target_currency": target_currency,
-                "order_id": order_id,
-            },
-        )
+        return self.get_order(ticker=ticker, order_id=order_id)
 
     def list_completed_orders(
         self,

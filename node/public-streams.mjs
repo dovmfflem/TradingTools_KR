@@ -12,26 +12,39 @@ export const PUBLIC_STREAMS = {
   korbit: { url: "wss://ws-api.korbit.co.kr/v2/public", source: "korbit-websocket" },
 }
 
-export function orderbookSubscription(exchangeId, quoteCurrency, symbol) {
+export function orderbookSubscriptions(exchangeId, quoteCurrency, symbols) {
+  if (!Object.hasOwn(PUBLIC_STREAMS, exchangeId)) throw new Error("UNSUPPORTED_EXCHANGE")
+  if (!Array.isArray(symbols) || !symbols.length || symbols.length > 100 ||
+      symbols.some((symbol) => typeof symbol !== "string" || !/^[A-Z0-9]{2,15}$/.test(symbol))) {
+    throw new Error("INVALID_MARKET_SYMBOLS")
+  }
+  const unique = [...new Set(symbols)]
   if (exchangeId === "korbit") {
-    return [{ requestId: 1, method: "subscribe", type: "orderbook", symbols: [`${symbol.toLowerCase()}_${quoteCurrency.toLowerCase()}`] }]
+    return [[{ requestId: 1, method: "subscribe", type: "orderbook",
+      symbols: unique.map((symbol) => `${symbol.toLowerCase()}_${quoteCurrency.toLowerCase()}`) }]]
   }
   if (exchangeId.startsWith("binance_")) {
-    return { method: "SUBSCRIBE", params: [`${symbol.toLowerCase()}${quoteCurrency.toLowerCase()}@depth20@100ms`], id: "gridlab-depth" }
+    return [{ method: "SUBSCRIBE",
+      params: unique.map((symbol) => `${symbol.toLowerCase()}${quoteCurrency.toLowerCase()}@depth20@100ms`),
+      id: "gridlab-depth" }]
   }
   if (exchangeId === "coinone") {
-    return {
+    return unique.map((symbol) => ({
       request_type: "SUBSCRIBE",
       channel: "ORDERBOOK",
       topic: { quote_currency: quoteCurrency, target_currency: symbol },
       format: "DEFAULT",
-    }
+    }))
   }
-  return [
+  return [[
     { ticket: `gridlab-${randomUUID()}` },
-    { type: "orderbook", codes: [`${quoteCurrency}-${symbol}`] },
+    { type: "orderbook", codes: unique.map((symbol) => `${quoteCurrency}-${symbol}`) },
     { format: "DEFAULT" },
-  ]
+  ]]
+}
+
+export function orderbookSubscription(exchangeId, quoteCurrency, symbol) {
+  return orderbookSubscriptions(exchangeId, quoteCurrency, [symbol])[0]
 }
 
 export function createPublicSocket(exchangeId, {
@@ -74,6 +87,10 @@ export function createPublicSocket(exchangeId, {
     if (!["TIMED_OUT", "FAILED"].includes(socket.tradingToolsState)) socket.tradingToolsState = "CLOSED"
   }, { once: true })
   return socket
+}
+
+export function coinonePingMessage() {
+  return { request_type: "PING" }
 }
 
 export function upbitDepthSubscription(codes, { ticket = "gridlab-overseas-arbitrage", format = "SIMPLE" } = {}) {

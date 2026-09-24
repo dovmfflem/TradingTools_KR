@@ -19,10 +19,10 @@
 - [ ] 전체 잔고 조회: `POST /v2.1/account/balance/all`
 - [ ] 특정 자산 잔고 조회: `POST /v2.1/account/balance`
 - [ ] 전체 수수료 조회: `POST /v2.1/account/trade_fee`
-- [ ] 개별 종목 수수료 조회: `POST /v2.1/account/trade_fee/market`
+- [ ] 개별 종목 수수료 조회: `POST /v2.1/account/trade_fee/{quote_currency}/{target_currency}`
 - [ ] 가상자산 입금 주소 조회: `POST /v2.1/account/deposit_address`
 - [ ] 미체결 주문 조회: `POST /v2.1/order/active_orders`
-- [ ] 주문 정보 조회: `POST /v2.1/order/order_info`
+- [ ] 주문 정보 조회: `POST /v2.1/order/detail`
   - 필요 값: 실제 테스트 주문의 `order_id` 또는 `user_order_id`
 - [ ] 전체 체결 주문 조회: `POST /v2.1/order/completed_orders/all`
 - [ ] 종목 별 체결 주문 조회: `POST /v2.1/order/completed_orders/market`
@@ -80,7 +80,7 @@
 
 ## 아직 결정할 것
 
-- [ ] 주문 생성 후 주문 ID로 `order_info`와 `order` 단건 조회까지 자동 연결할지
+- [ ] 주문 생성 후 주문 ID/사용자 주문 ID로 `order/detail` 단건 조회까지 자동 연결할지
 - [ ] 입금 주소 조회 대상 currency 기본값을 `BTC`로 둘지, 설정값으로 받을지
 - [ ] 출금 관련 조회 API를 기본 테스트에 포함할지, `--include-withdrawal-queries` 같은 옵션으로 분리할지
 - [ ] WebSocket 결과 샘플을 `tests/results/coinone/websocket/`에 저장할지

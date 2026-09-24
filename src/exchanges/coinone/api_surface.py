@@ -150,7 +150,7 @@ API_SURFACE: Final[dict[str, Any]] = {
                     "category": "Private / Account",
                     "auth": "required",
                     "method": "POST",
-                    "endpoint": "/v2.1/account/trade_fee/market",
+                    "endpoint": "/v2.1/account/trade_fee/{quote_currency}/{target_currency}",
                     "doc": _doc("trade-fee-market"),
                 },
                 "get_deposit_address(currency)": {
@@ -206,14 +206,14 @@ API_SURFACE: Final[dict[str, Any]] = {
                     "category": "Private / Order",
                     "auth": "required",
                     "method": "POST",
-                    "endpoint": "/v2.1/order/order_info",
-                    "doc": _doc("order-info"),
+                    "endpoint": "/v2.1/order/detail",
+                    "doc": _doc("order-detail"),
                 },
                 "get_order_detail(ticker, order_id)": {
                     "category": "Private / Order",
                     "auth": "required",
                     "method": "POST",
-                    "endpoint": "/v2.1/order",
+                    "endpoint": "/v2.1/order/detail",
                     "doc": _doc("order-detail"),
                 },
                 "list_completed_orders(ticker=None, size=None, from_ts=None, to_ts=None)": {
