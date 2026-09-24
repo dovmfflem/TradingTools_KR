@@ -24,6 +24,13 @@ def exact(value):
     return format(decimal(value), "f")
 
 
+def balance_pair(available, locked):
+    available, locked = decimal(available), decimal(locked)
+    if available < 0 or locked < 0:
+        raise ValueError("INVALID_ACCOUNT_BALANCE")
+    return {"available": exact(available), "locked": exact(locked)}
+
+
 @dataclass(frozen=True)
 class Order:
     id: str
@@ -99,6 +106,10 @@ class SpotAdapter:
         if quote not in self.quotes or not re.fullmatch(r"[A-Z0-9]{1,20}", base):
             raise ValueError("UNSUPPORTED_SPOT_MARKET")
         return market
+
+    def balance_details(self):
+        return {str(row["currency"]).upper(): balance_pair(row["balance"], row["locked"])
+                for row in self.client.get_accounts()}
 
     def balances(self):
         return {str(row["currency"]).upper(): exact(row["balance"]) for row in self.client.get_accounts()}
@@ -181,6 +192,10 @@ class CoinoneSpot(SpotAdapter):
         quote, base = market.split("-")
         return f"{base}-{quote}"
 
+    def balance_details(self):
+        return {row["currency"].upper(): balance_pair(row["available"], row["limit"])
+                for row in self.client.get_all_balances()["balances"]}
+
     def balances(self):
         return {row["currency"].upper(): exact(row["available"]) for row in self.client.get_all_balances()["balances"]}
 
@@ -229,6 +244,10 @@ class KorbitSpot(SpotAdapter):
         super().pair(market)
         quote, base = market.split("-")
         return f"{base.lower()}_{quote.lower()}"
+
+    def balance_details(self):
+        return {row["currency"].upper(): balance_pair(row["available"], decimal(row["balance"]) - decimal(row["available"]))
+                for row in self.client.get_balances()}
 
     def balances(self):
         return {row["currency"].upper(): exact(row["available"]) for row in self.client.get_balances()}

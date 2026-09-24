@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import unittest
+from decimal import Decimal
 from unittest.mock import Mock
 
 from src.exchanges.spot_trading import (ADAPTERS, SpotAdapter, UpbitSpot, BithumbSpot,
@@ -9,6 +10,17 @@ from src.exchanges.spot_trading import (ADAPTERS, SpotAdapter, UpbitSpot, Bithum
 
 
 class SpotTradingTests(unittest.TestCase):
+    def test_exact_available_and_locked_balances_for_all_spot_adapters(self):
+        for cls in (UpbitSpot, BithumbSpot, CoinoneSpot, KorbitSpot):
+            with self.subTest(exchange=cls.exchange):
+                client = Mock()
+                client.get_accounts.return_value = [{"currency": "btc", "balance": "1.12345678", "locked": "0.02"}]
+                client.get_all_balances.return_value = {"balances": [{"currency": "btc", "available": "1.12345678", "limit": "0.02"}]}
+                client.get_balances.return_value = [{"currency": "btc", "available": "1.12345678", "balance": "1.14345678", "tradeInUse": "0.01", "withdrawalInUse": "0.01"}]
+                details = cls(client).balance_details()["BTC"]
+                self.assertEqual(details["available"], "1.12345678")
+                self.assertEqual(Decimal(details["locked"]), Decimal("0.02"))
+
     def test_manifest_matches_registered_adapters(self):
         manifest = json.loads((Path(__file__).parents[1] / "spot-adapters.json").read_text(encoding="utf8"))
         self.assertEqual(set(ADAPTERS), {entry["id"] for entry in manifest})
