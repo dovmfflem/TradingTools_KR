@@ -1,10 +1,11 @@
 """Offline account-stream and financial request contracts for grid runtimes."""
 import unittest
+import json
 from unittest.mock import Mock, patch
 
 import requests
 
-from src.exchanges.stream_transport import private_account_connection_config
+from src.exchanges.stream_transport import private_account_connection_config, encode_private_subscription
 from src.exchanges.private_events import normalize_private_order_event, normalize_private_asset_event
 from src.exchanges.upbit.upbit_rest import UpbitRest
 from src.exchanges.bithumb.bithumb_rest import BithumbRest
@@ -14,6 +15,19 @@ from src.exchanges.korbit.korbit_events import normalize_events as normalize_kor
 
 
 class GridbotContracts(unittest.TestCase):
+    def test_subscription_wire_envelope_matches_each_exchange_protocol(self):
+        with patch.object(KorbitRest, "signed_params", return_value="fixture=1"):
+            for exchange in ("upbit", "bithumb", "coinone", "korbit"):
+                _, _, messages = private_account_connection_config(
+                    exchange, "fixture-access", "fixture-secret", ["KRW-USDT"])
+                for payload in messages:
+                    wire = json.loads(encode_private_subscription(exchange, payload))
+                    self.assertEqual(wire, [payload] if exchange == "korbit" else payload)
+                    if exchange == "korbit":
+                        self.assertEqual(wire[0]["method"], "subscribe")
+                        self.assertEqual(wire[0]["accountSeqs"], [1])
+                    self.assertNotIn("fixture-secret", str(wire))
+
     def test_account_stream_batches_markets_and_assets_without_exposing_secrets(self):
         markets = ["KRW-BTC", "KRW-ETH", "KRW-BTC"]
         for exchange in ("upbit", "bithumb", "coinone"):

@@ -57,7 +57,8 @@ def private_account_connection_config(exchange, access, secret, markets, *, incl
                                       include_trades=True, account_seq=1):
     """Build one account stream's wire messages for all requested spot markets.
 
-    Each element of the returned subscriptions list is one WebSocket message.
+    Each element is one subscription payload; encode_private_subscription applies
+    its exchange-specific wire envelope before sending the WebSocket message.
     The caller owns connection sharing, acknowledgement, and bounded reconnects.
     """
     markets = _markets(markets)
@@ -102,6 +103,13 @@ def open_private_stream(url, headers, *, connect=None):
     if base not in {*PRIVATE_URLS.values(), "wss://ws-api.korbit.co.kr/v2/private", "wss://ws-api.digitalx.miraeasset.com/v2/private"}:
         raise ValueError("unsupported private stream URL")
     return _connect(url, headers=headers, connect=connect)
+
+
+def encode_private_subscription(exchange, subscription):
+    """Digital X v2 requires an array envelope even for a single subscription."""
+    if exchange == "korbit":
+        subscription = [subscription]
+    return json.dumps(subscription)
 
 
 def private_ping_message(exchange):
