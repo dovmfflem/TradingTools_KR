@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 import re
 
+from .api_error import ExchangeRequestError
+
 
 def decimal(value):
     try:
@@ -99,6 +101,9 @@ class SpotAdapter:
     quotes = ("KRW",)
     submission_id_fields = ("uuid",)
 
+    def is_order_missing(self, error):
+        return False
+
     def __init__(self, client):
         self.client = client
 
@@ -179,6 +184,65 @@ class SpotAdapter:
 
 class UpbitSpot(SpotAdapter):
     exchange = "upbit"
+
+    def is_order_missing(self, error):
+        return (isinstance(error, ExchangeRequestError) and error.exchange == self.exchange
+                and error.status_code == 404 and error.code == "order_not_found")
+
+    def resolve_missing_order(self, market, client_id):
+        """One independent identifier-list read; None means a valid empty list.
+
+        The caller must establish repeated negative single-order reads and must
+        not infer non-acceptance for an order with an acknowledgement or fills.
+        """
+        self.pair(market)
+        if not re.fullmatch(r"[a-z0-9_-]{1,36}", client_id):
+            raise ValueError("INVALID_ORDER_INTENT")
+        # No market filter: a mismatched response must fail, not look absent.
+        rows = self.client.list_orders_by_ids(identifiers=[client_id])
+        if not isinstance(rows, list) or len(rows) > 1:
+            raise ValueError("INVALID_ORDER_LIST_RESPONSE")
+        if not rows:
+            return None
+        if not isinstance(rows[0], dict) or rows[0].get("identifier") != client_id:
+            raise ValueError("ORDER_CLIENT_ID_MISMATCH")
+        return self.normalize(rows[0], market)
+
+    def resolve_closed_order(self, market, order_id, client_id, windows):
+        """Read one time window. Return (matching order, remaining windows).
+
+        Closed orders have no page cursor: a full result requires splitting the
+        creation-time window. Never interpret a truncated response as absence.
+        """
+        self.pair(market)
+        if not windows or not client_id:
+            raise ValueError("INVALID_CLOSED_ORDER_QUERY")
+        start, end = windows[0]
+        if not (isinstance(start, int) and isinstance(end, int) and 0 <= start <= end
+                and end - start <= 7 * 86400 * 1000):
+            raise ValueError("INVALID_CLOSED_ORDER_WINDOW")
+        rows = self.client.list_closed_orders(ticker=market, states=["done", "cancel"],
+            start_time=str(start), end_time=str(end), limit=1000, order_by="desc")
+        if (not isinstance(rows, list) or len(rows) > 1000
+                or any(not isinstance(r, dict) or not r.get("uuid") or r.get("state") not in {"done", "cancel"}
+                       or r.get("market") != market for r in rows)):
+            raise ValueError("INVALID_CLOSED_ORDER_RESPONSE")
+        matches = [r for r in rows if (order_id and r["uuid"] == order_id) or r.get("identifier") == client_id]
+        if len(matches) > 1:
+            raise ValueError("AMBIGUOUS_CLOSED_ORDER")
+        if matches:
+            row = matches[0]
+            if ((order_id and row["uuid"] != order_id)
+                    or (row.get("identifier") and row["identifier"] != client_id)):
+                raise ValueError("ORDER_IDENTITY_MISMATCH")
+            return self.normalize(row, market), []
+        remaining = list(windows[1:])
+        if len(rows) == 1000:
+            if end - start <= 1:
+                raise ValueError("CLOSED_ORDER_WINDOW_TRUNCATED")
+            middle = (start + end) // 2
+            remaining = [(middle, end), (start, middle), *remaining]
+        return None, remaining
 
 
 class BithumbSpot(SpotAdapter):

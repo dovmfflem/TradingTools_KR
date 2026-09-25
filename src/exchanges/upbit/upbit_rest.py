@@ -616,7 +616,9 @@ class UpbitRest(ExchangeResponseMixin):
             "order_by": order_by,
         }
         data = self._request("GET", "/v1/orders/uuids", params=params)
-        return data if isinstance(data, list) else []
+        if not isinstance(data, list):
+            raise UpbitRestError("upbit", "INVALID_RESPONSE", status_code=200)
+        return data
 
     def list_orders(self, **kwargs: Any) -> list[dict[str, Any]]:
         return self.list_orders_by_ids(**kwargs)
@@ -671,7 +673,9 @@ class UpbitRest(ExchangeResponseMixin):
                 "order_by": order_by,
             },
         )
-        return data if isinstance(data, list) else []
+        if not isinstance(data, list):
+            raise UpbitRestError("upbit", "INVALID_RESPONSE", status_code=200)
+        return data
 
     def _build_order_body(
         self,
