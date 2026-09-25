@@ -34,7 +34,7 @@ class SpotTradingTests(unittest.TestCase):
                     "volume": "0.12345678", "executed_volume": "0.12345678", "state": "done", key: "intent-1"}
                 adapter = cls(client)
                 self.assertEqual(adapter.submit("KRW-BTC", "buy", "10000", "0.12345678", "intent-1"), "order-1")
-                client.place_order.assert_called_once_with(ticker="KRW-BTC", side="bid", order_type="limit",
+                client.place_order.assert_called_once_with(ticker="BTC-KRW" if cls is BithumbSpot else "KRW-BTC", side="bid", order_type="limit",
                     price="10000", volume="0.12345678", **{key: "intent-1"})
                 order = adapter.lookup("KRW-BTC", client_id="intent-1")
                 client.get_order.assert_called_once_with(None, **{key: "intent-1"})

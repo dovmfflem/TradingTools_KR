@@ -97,6 +97,7 @@ class Policy:
 class SpotAdapter:
     exchange = ""
     quotes = ("KRW",)
+    submission_id_fields = ("uuid",)
 
     def __init__(self, client):
         self.client = client
@@ -144,7 +145,7 @@ class SpotAdapter:
         key = "identifier" if self.exchange == "upbit" else "client_order_id"
         data = self.client.place_order(ticker=self.pair(market), side="bid" if side == "buy" else "ask",
             order_type="limit", price=exact(price), volume=exact(quantity), **{key: client_id})
-        order_id = data.get("uuid")
+        order_id = next((data.get(key) for key in self.submission_id_fields if data.get(key)), None)
         if not order_id:
             raise ValueError("ORDER_RESULT_UNKNOWN")
         return str(order_id)
@@ -182,6 +183,13 @@ class UpbitSpot(SpotAdapter):
 
 class BithumbSpot(SpotAdapter):
     exchange = "bithumb"
+    submission_id_fields = ("order_id", "uuid")
+
+    def pair(self, market):
+        super().pair(market)
+        quote, base = market.split("-")
+        # BithumbRest accepts BASE-QUOTE, then encodes QUOTE-BASE on the wire.
+        return f"{base}-{quote}"
 
 
 class CoinoneSpot(SpotAdapter):
