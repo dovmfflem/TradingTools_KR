@@ -6,6 +6,7 @@ Register another adapter to extend the engine without changing its order logic.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 import re
 
@@ -26,6 +27,22 @@ def exact(value):
     return format(decimal(value), "f")
 
 
+def execution_time(value):
+    """Optional execution timestamp in epoch seconds, never order creation time."""
+    try:
+        if isinstance(value, str) and "T" in value:
+            stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                return None
+            seconds = stamp.timestamp()
+        else:
+            number = decimal(value)
+            seconds = float(number / 1000 if number >= 1000000000000 else number)
+        return seconds if 0 < seconds < 253402214400 else None
+    except (ValueError, TypeError, OverflowError, OSError):
+        return None
+
+
 def balance_pair(available, locked):
     available, locked = decimal(available), decimal(locked)
     if available < 0 or locked < 0:
@@ -44,6 +61,7 @@ class Order:
     client_id: str = ""
     fee: str | None = None
     turnover: str | None = None
+    filled_at: float | None = None
 
     def __post_init__(self):
         if not self.id or self.side not in {"buy", "sell"} or self.status not in {"OPEN", "FILLED", "CANCELED"}:
@@ -142,7 +160,9 @@ class SpotAdapter:
                      exact(data["volume"]), exact(data["executed_volume"]), states[data["state"]],
                      str(data.get("identifier") or data.get("client_order_id") or ""),
                      exact(data["paid_fee"]) if data.get("paid_fee") is not None else None,
-                     exact(turnover) if turnover is not None else None)
+                     exact(turnover) if turnover is not None else None,
+                     max((stamp for t in (trades or []) if isinstance(t, dict)
+                          if (stamp := execution_time(t.get("created_at"))) is not None), default=None))
 
     def submit(self, market, side, price, quantity, client_id):
         if side not in {"buy", "sell"} or not re.fullmatch(r"[a-z0-9_-]{1,36}", client_id):
@@ -179,7 +199,8 @@ class SpotAdapter:
             return None
         return Order(str(fields["exchangeOrderId"]), message["market"], side, exact(quantity),
                      exact(fields["cumulativeFilled"]), status, str(fields.get("clientOrderId") or ""),
-                     exact(fields["fee"]) if fields.get("fee") is not None else None)
+                     exact(fields["fee"]) if fields.get("fee") is not None else None,
+                     filled_at=execution_time(fields.get("fillTimestamp")))
 
 
 class UpbitSpot(SpotAdapter):
@@ -386,7 +407,8 @@ class KorbitSpot(SpotAdapter):
                   "filled": "FILLED", "canceled": "CANCELED", "partiallyFilledCanceled": "CANCELED",
                   "expired": "CANCELED"}[row["status"]]
         return Order(str(row["orderId"]), market, row["side"], exact(row["qty"]), exact(row["filledQty"]),
-                     status, str(row.get("clientOrderId") or ""))
+                     status, str(row.get("clientOrderId") or ""),
+                     filled_at=execution_time(row.get("lastFilledAt")))
 
     def cancel(self, market, order_id):
         self.client.cancel_order(symbol=self.pair(market), order_id=order_id)

@@ -90,7 +90,7 @@ def normalize_events(message, market, *, account_seq=1):
         exact = {"exchangeOrderId": order_id}
         for target, source in (("clientOrderId", "clientOrderId"), ("originalPrice", "price"),
                                ("originalVolume", "qty"), ("cumulativeFilled", "filledQty"),
-                               ("fee", "fee")):
+                               ("fee", "fee"), ("fillTimestamp", "lastFilledAt")):
             value = row.get(source)
             if value is None:
                 continue
