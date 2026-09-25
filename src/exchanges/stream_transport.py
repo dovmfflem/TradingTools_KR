@@ -99,7 +99,7 @@ def private_connection_config(exchange, access, secret, market):
 def open_private_stream(url, headers, *, connect=None):
     # URLs are produced by private_connection_config; allow no alternate origins.
     base = url.split("?", 1)[0]
-    if base not in {*PRIVATE_URLS.values(), "wss://ws-api.korbit.co.kr/v2/private"}:
+    if base not in {*PRIVATE_URLS.values(), "wss://ws-api.korbit.co.kr/v2/private", "wss://ws-api.digitalx.miraeasset.com/v2/private"}:
         raise ValueError("unsupported private stream URL")
     return _connect(url, headers=headers, connect=connect)
 

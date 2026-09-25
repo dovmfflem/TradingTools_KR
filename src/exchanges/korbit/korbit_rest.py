@@ -1,6 +1,6 @@
 """Korbit Open API v2. Secrets stay here; requests have no automatic retries.
 
-Reference: https://docs.korbit.co.kr/llms-full.txt (2026-09-18).
+Reference: https://docs.digitalx.miraeasset.com/llms-full.txt (2026-09-25).
 Each HTTP request has a 3s connect/read timeout; the parent job has a 25s deadline.
 Signed calls never follow redirects or expose URLs/response bodies in errors.
 """
@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import math
 import re
 import time
 from urllib.parse import urlencode
@@ -16,8 +17,8 @@ from urllib.parse import urlencode
 import requests
 from ..api_error import ExchangeRequestError, ExchangeResponseMixin, response_metadata, reject_retrying_transport
 
-BASE_URL = "https://api.korbit.co.kr"
-PRIVATE_WS_URL = "wss://ws-api.korbit.co.kr/v2/private"
+BASE_URL = "https://api.digitalx.miraeasset.com"
+PRIVATE_WS_URL = "wss://ws-api.digitalx.miraeasset.com/v2/private"
 
 
 class KorbitRestError(ExchangeRequestError):
@@ -103,6 +104,29 @@ class KorbitRest(ExchangeResponseMixin):
 
     def get_tick_size_policy(self, symbol):
         return self.request("GET", "/v2/tickSizePolicy", {"symbol": symbol}, private=False)
+
+    def get_orderbook(self, ticker):
+        symbol = str(ticker).strip().lower().replace("/", "_").replace("-", "_")
+        if not re.fullmatch(r"[a-z0-9]+_[a-z0-9]+", symbol):
+            raise ValueError("INVALID_MARKET")
+        return self.request("GET", "/v2/orderbook", {"symbol": symbol}, private=False)
+
+    def get_orderbook_parse(self, ticker, *, count=5):
+        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+            raise ValueError("count must be a positive integer")
+        book = self.get_orderbook(ticker)
+        result = {"source": "digitalx-rest", "exchange": "korbit", "ticker": ticker}
+        for side in ("bids", "asks"):
+            levels = []
+            for raw in book.get(side, []):
+                try:
+                    price, qty = float(raw["price"]), float(raw["qty"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if math.isfinite(price) and math.isfinite(qty) and price > 0 and qty >= 0:
+                    levels.append({"price": price, "qty": qty})
+            result[side] = sorted(levels, key=lambda row: row["price"], reverse=side == "bids")[:count]
+        return result
 
     def get_trading_fee_policy(self, symbol, *, account_seq=1):
         return self.request("GET", "/v2/tradingFeePolicy", {"symbol": symbol, "accountSeq": account_seq})

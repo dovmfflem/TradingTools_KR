@@ -9,7 +9,7 @@ export const PUBLIC_STREAMS = {
   upbit: { url: "wss://api.upbit.com/websocket/v1", source: "upbit-websocket" },
   bithumb: { url: "wss://ws-api.bithumb.com/websocket/v1", source: "bithumb-websocket" },
   coinone: { url: "wss://stream.coinone.co.kr", source: "coinone-websocket" },
-  korbit: { url: "wss://ws-api.korbit.co.kr/v2/public", source: "korbit-websocket" },
+  korbit: { url: "wss://ws-api.digitalx.miraeasset.com/v2/public", source: "korbit-websocket" },
 }
 
 export function orderbookSubscriptions(exchangeId, quoteCurrency, symbols) {

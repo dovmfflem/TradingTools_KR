@@ -265,6 +265,8 @@ class CoinoneRest(ExchangeResponseMixin):
         order_book_unit: str | float | int | None = None,
     ) -> dict[str, Any]:
         quote_currency, target_currency = _to_pair(ticker)
+        if size is not None and (isinstance(size, bool) or size not in (5, 10, 15, 16)):
+            raise ValueError("orderbook size must be one of 5, 10, 15, 16")
         return self._public_get(
             f"/public/v2/orderbook/{quote_currency}/{target_currency}",
             params={"size": size, "order_book_unit": order_book_unit},
@@ -278,10 +280,12 @@ class CoinoneRest(ExchangeResponseMixin):
             return None
 
     def get_orderbook_parse(self, ticker: str, *, count: int = 5) -> dict[str, Any]:
-        if count <= 0:
-            raise ValueError("count must be greater than 0")
+        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+            raise ValueError("count must be a positive integer")
 
-        raw_book = self.get_orderbook(ticker, size=count)
+        # Display depth is independent of the API's allowed request sizes.
+        size = next((size for size in (5, 10, 15, 16) if size >= count), 16)
+        raw_book = self.get_orderbook(ticker, size=size)
         asks: list[dict[str, float]] = []
         bids: list[dict[str, float]] = []
 
