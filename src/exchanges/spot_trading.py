@@ -185,6 +185,21 @@ class BithumbSpot(SpotAdapter):
     exchange = "bithumb"
     submission_id_fields = ("order_id", "uuid")
 
+    def event(self, message, quantity, side):
+        fields = dict(message.get("exact") or {})
+        state = str(message.get("state", "")).lower()
+        if message.get("event") == "order":
+            if state == "wait" and fields.get("originalVolume") is not None and fields.get("cumulativeFilled") is None:
+                fields["cumulativeFilled"] = "0"
+            # v2 done messages can omit cumulative fields. A trade that already
+            # proves full execution needs neither that message nor a REST lookup.
+            if (state == "trade" and fields.get("cumulativeFilled") is not None
+                    and fields.get("remainingVolume") is not None
+                    and decimal(fields["cumulativeFilled"]) == decimal(quantity)
+                    and decimal(fields["remainingVolume"]) == 0):
+                state = "done"
+        return super().event({**message, "state": state, "exact": fields}, quantity, side)
+
     def pair(self, market):
         super().pair(market)
         quote, base = market.split("-")
@@ -194,6 +209,30 @@ class BithumbSpot(SpotAdapter):
 
 class CoinoneSpot(SpotAdapter):
     exchange = "coinone"
+
+    def event(self, message, quantity, side):
+        if (message.get("event") != "order" or message.get("reconcileRequired")
+                or message.get("order", {}).get("orderType") != "limit"):
+            return None
+        fields = dict(message.get("exact") or {})
+        state = str(message.get("state", "")).lower()
+        # executed_qty is THIS fill (or a cancellation), never the cumulative
+        # amount. Use the known limit-order quantity and post-trade remainder.
+        # Cancellations have post-cancel remainder zero too; reconcile them.
+        if decimal(fields.get("preventedVolume", "0")) != 0:
+            return None
+        if state == "wait" and fields.get("originalVolume") is not None:
+            fields["cumulativeFilled"] = "0"
+        elif state in {"trade", "trade_done"} and fields.get("remainingVolume") is not None:
+            remaining, original = decimal(fields["remainingVolume"]), decimal(quantity)
+            if not 0 <= remaining <= original or (state == "trade_done" and remaining != 0):
+                return None
+            fields["cumulativeFilled"] = exact(original - remaining)
+            if remaining == 0:
+                state = "trade_done"
+        else:
+            return None
+        return super().event({**message, "state": state, "exact": fields}, quantity, side)
 
     def pair(self, market):
         super().pair(market)

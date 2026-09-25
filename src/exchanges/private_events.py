@@ -48,6 +48,7 @@ def normalize_private_order_event(exchange: str, message: Any, market: str) -> d
         price, volume, remaining = row.get("order_price"), row.get("order_qty"), row.get("remain_qty")
         fields = {"clientOrderId": ("user_order_id",), "originalPrice": ("order_price",),
                   "originalVolume": ("order_qty",), "remainingVolume": ("remain_qty",),
+                  "preventedVolume": ("prevented_qty",),
                   "fillId": ("trade_id",), "fillPrice": ("executed_price",),
                   "fillVolume": ("executed_qty",), "fee": ("executed_fee",),
                   "fillTimestamp": ("executed_timestamp",)}
@@ -112,12 +113,15 @@ def normalize_private_order_event(exchange: str, message: Any, market: str) -> d
         for key in ("fillId", "fillPrice", "fillVolume", "fee", "fillTimestamp"):
             exact_order.pop(key, None)
     exact_order["exchangeOrderId"] = order_id
+    reconcile_required = (exchange == "coinone" and row.get("prevented_qty") is not None
+                          and "preventedVolume" not in exact_order)
     if exchange == "upbit" and state == "wait":
         exact_order.setdefault("originalPrice", _exact(row.get("price")))
         exact_order.setdefault("originalVolume", _exact(row.get("volume")))
     exact_order = {key: value for key, value in exact_order.items() if value is not None}
     return {"event": "order", "id": order_id, "market": market, "state": state,
-            "timestamp": stamp, "terminal": terminal, "order": patch, "exact": exact_order}
+            "timestamp": stamp, "terminal": terminal, "order": patch, "exact": exact_order,
+            **({"reconcileRequired": True} if reconcile_required else {})}
 
 
 def normalize_private_asset_event(exchange: str, message: Any) -> dict | None:
