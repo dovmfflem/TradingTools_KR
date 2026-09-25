@@ -19,6 +19,11 @@ class CoinoneRestError(ExchangeRequestError):
     def __init__(self, exchange: str, code: str | None = None, **metadata):
         super().__init__("coinone", code or "LEGACY_RESPONSE_INVALID", **metadata)
 
+    @property
+    def transient_read_failure(self):
+        # Coinone reports server failure 405 in a successful HTTP response too.
+        return str(self.code) == "405" or super().transient_read_failure
+
 
 def _strip_comment(line: str) -> str:
     in_single = False

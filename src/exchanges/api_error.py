@@ -23,6 +23,13 @@ class ExchangeRequestError(RuntimeError):
         self.outcome_unknown = outcome_unknown
         super().__init__(public_message or f"{exchange.upper()}_{code}")
 
+    @property
+    def transient_read_failure(self):
+        """Read-only retry classification; never authorizes mutation replay."""
+        return (self.code in {"TRANSPORT_FAILED", "RATE_LIMITED"}
+                or self.status_code in {408, 429}
+                or isinstance(self.status_code, int) and 500 <= self.status_code <= 599)
+
 
 def response_metadata(response):
     headers = getattr(response, "headers", None)
