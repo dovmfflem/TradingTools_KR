@@ -295,6 +295,73 @@ class BithumbSpot(SpotAdapter):
 class CoinoneSpot(SpotAdapter):
     exchange = "coinone"
 
+    def resolve_completed_order(self, market, order_id, client_id, side, quantity, probe):
+        """Read one fill-history page. Only exact, cumulative full fills are terminal.
+
+        The caller bounds requests/time and owns the scan state. History cannot
+        prove cancellation, absence or acceptance of an unacknowledged intent.
+        """
+        if not order_id or side not in {"buy", "sell"} or decimal(quantity) <= 0:
+            raise ValueError("COMPLETED_ORDER_ID_REQUIRED")
+        start, end = int(probe["from"]), int(probe["to"])
+        if not 0 <= start <= end or end - start > 90 * 86400 * 1000:
+            raise ValueError("INVALID_COMPLETED_ORDER_WINDOW")
+        cursor = probe.get("cursor")
+        response = self.client.list_completed_orders(ticker=self.pair(market), size=100,
+            from_ts=start, to_ts=end, **({"to_trade_id": cursor} if cursor else {}))
+        rows = response["completed_orders"]
+        if not isinstance(rows, list) or len(rows) > 100:
+            raise ValueError("INVALID_COMPLETED_ORDERS")
+        trades = dict(probe.get("trades", {}))
+        for row in rows:
+            if not isinstance(row, dict) or not row.get("trade_id") or not row.get("order_id"):
+                raise ValueError("INVALID_COMPLETED_TRADE")
+            if str(row["order_id"]) != order_id:
+                continue
+            if f'{row["quote_currency"]}-{row["target_currency"]}' != market:
+                raise ValueError("ORDER_MARKET_MISMATCH")
+            if not isinstance(row["is_ask"], bool) or row["is_ask"] != (side == "sell"):
+                raise ValueError("ORDER_SIDE_MISMATCH")
+            qty, price, stamp = decimal(row["qty"]), decimal(row["price"]), decimal(row["timestamp"])
+            if qty <= 0 or price <= 0 or not start <= stamp <= end:
+                raise ValueError("INVALID_COMPLETED_TRADE")
+            fee = exact(row["fee"]) if row.get("fee") is not None and row.get("fee_currency") == market.split("-")[0] else None
+            value = (exact(qty), exact(price), int(stamp), fee)
+            trade_id = str(row["trade_id"])
+            if trade_id in trades and trades[trade_id] != value:
+                raise ValueError("CONFLICTING_COMPLETED_TRADE")
+            trades[trade_id] = value
+        filled = sum((decimal(t[0]) for t in trades.values()), Decimal(0))
+        if filled > decimal(quantity):
+            raise ValueError("COMPLETED_ORDER_QUANTITY_MISMATCH")
+        more = len(rows) == 100
+        next_cursor = str(rows[-1]["trade_id"]) if more else None
+        cursors = set(probe.get("cursors", []))
+        if more and next_cursor in cursors:
+            raise ValueError("COMPLETED_ORDER_CURSOR_STALLED")
+        if more:
+            cursors.add(next_cursor)
+        # Commit only after validating the whole page; a failed read can retry it.
+        probe.update(trades=trades, cursor=next_cursor, cursors=list(cursors), filled=exact(filled))
+        if filled != decimal(quantity):
+            return None, more
+        fee = exact(sum((decimal(t[3]) for t in trades.values()), Decimal(0))) if all(t[3] is not None for t in trades.values()) else None
+        turnover = sum((decimal(t[0]) * decimal(t[1]) for t in trades.values()), Decimal(0))
+        return Order(order_id, market, side, exact(quantity), exact(filled), "FILLED", client_id,
+            fee, exact(turnover), max(t[2] for t in trades.values()) / 1000), False
+
+    def is_order_missing(self, error):
+        return (isinstance(error, ExchangeRequestError) and error.exchange == self.exchange
+                and str(error.code) == "104")
+
+    def resolve_missing_order(self, market, client_id):
+        # Independent selector, same read-only endpoint. A 104 remains unknown,
+        # never proof that an acknowledged order was filled/canceled/unaccepted.
+        result = self.lookup(market, client_id=client_id)
+        if result.client_id != client_id:
+            raise ValueError("ORDER_CLIENT_ID_MISMATCH")
+        return result
+
     def event(self, message, quantity, side):
         if (message.get("event") != "order" or message.get("reconcileRequired")
                 or message.get("order", {}).get("orderType") != "limit"):

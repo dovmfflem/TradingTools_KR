@@ -4,9 +4,33 @@ import unittest
 from unittest.mock import Mock
 import requests
 from src.exchanges.coinone.coinone_rest import CoinoneRest, CoinoneRestError
+from src.exchanges.spot_trading import CoinoneSpot
+from src.exchanges.api_error import ExchangeRequestError
 
 
 class CoinoneErrorRecoveryTests(unittest.TestCase):
+    def test_missing_order_requeries_by_user_order_id_without_inventing_outcome(self):
+        client = Mock()
+        adapter = CoinoneSpot(client)
+        self.assertTrue(adapter.is_order_missing(CoinoneRestError("coinone", "104", status_code=200)))
+        self.assertFalse(adapter.is_order_missing(CoinoneRestError("coinone", "12", status_code=200)))
+        self.assertFalse(adapter.is_order_missing(ExchangeRequestError("upbit", "104", status_code=200)))
+        for state in ("LIVE", "FILLED", "CANCELED"):
+            client.get_order.return_value = {"order": {"order_id": "exchange-id", "user_order_id": "intent-id",
+                "quote_currency": "KRW", "target_currency": "USDT", "side": "BUY", "original_qty": "5",
+                "executed_qty": "5" if state == "FILLED" else "0", "status": state}}
+            result = adapter.resolve_missing_order("KRW-USDT", "intent-id")
+            self.assertEqual(result.status, {"LIVE": "OPEN"}.get(state, state))
+            client.get_order.assert_called_with(ticker="USDT-KRW", user_order_id="intent-id")
+        client.get_order.return_value["order"]["user_order_id"] = "different-intent"
+        with self.assertRaisesRegex(ValueError, "ORDER_CLIENT_ID_MISMATCH"):
+            adapter.resolve_missing_order("KRW-USDT", "intent-id")
+        client.get_order.side_effect = CoinoneRestError("coinone", "104", status_code=200)
+        with self.assertRaises(CoinoneRestError):
+            adapter.resolve_missing_order("KRW-USDT", "intent-id")
+        client.place_order.assert_not_called()
+        client.cancel_order.assert_not_called()
+
     def test_http_200_preserves_exchange_code_and_classifies_reads(self):
         client = CoinoneRest("fixture", "fixture", timeout_seconds=3)
         self.addCleanup(client._session.close)

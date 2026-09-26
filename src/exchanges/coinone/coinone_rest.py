@@ -601,8 +601,11 @@ class CoinoneRest(ExchangeResponseMixin):
         size: int | None = None,
         from_ts: int | None = None,
         to_ts: int | None = None,
+        to_trade_id: str | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"size": size, "from_ts": from_ts, "to_ts": to_ts}
+        if to_trade_id is not None:
+            body["to_trade_id"] = to_trade_id
         if ticker:
             quote_currency, target_currency = _to_pair(ticker)
             body.update({"quote_currency": quote_currency, "target_currency": target_currency})
