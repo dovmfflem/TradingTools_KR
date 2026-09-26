@@ -122,6 +122,10 @@ class SpotAdapter:
     def is_order_missing(self, error):
         return False
 
+    def recover_order(self, market, order_id, client_id, side, quantity, probe):
+        from .order_recovery import recover_order
+        return recover_order(self, market, order_id, client_id, side, quantity, probe)
+
     def __init__(self, client):
         self.client = client
 
@@ -270,6 +274,10 @@ class BithumbSpot(SpotAdapter):
     exchange = "bithumb"
     submission_id_fields = ("order_id", "uuid")
 
+    def is_order_missing(self, error):
+        return (isinstance(error, ExchangeRequestError) and error.exchange == self.exchange
+                and error.status_code == 404 and error.code == "order_not_found")
+
     def event(self, message, quantity, side):
         fields = dict(message.get("exact") or {})
         state = str(message.get("state", "")).lower()
@@ -294,6 +302,27 @@ class BithumbSpot(SpotAdapter):
 
 class CoinoneSpot(SpotAdapter):
     exchange = "coinone"
+
+    def resolve_active_order(self, market, order_id, client_id):
+        rows = self.client.list_active_orders(ticker=self.pair(market))["active_orders"]
+        if not isinstance(rows, list) or any(not isinstance(r, dict) or not r.get("order_id") for r in rows):
+            raise ValueError("INVALID_ACTIVE_ORDERS")
+        matches = [r for r in rows if (order_id and r["order_id"] == order_id)
+                   or (client_id and r.get("user_order_id") == client_id)]
+        if len(matches) > 1:
+            raise ValueError("AMBIGUOUS_ACTIVE_ORDER")
+        if not matches:
+            # Without a server ID, missing optional user IDs cannot prove absence.
+            return None, bool(order_id) or all(r.get("user_order_id") for r in rows)
+        row = matches[0]
+        if ((order_id and row["order_id"] != order_id)
+                or (row.get("user_order_id") and row["user_order_id"] != client_id)
+                or f'{row["quote_currency"]}-{row["target_currency"]}' != market):
+            raise ValueError("ORDER_IDENTITY_MISMATCH")
+        if decimal(row["remain_qty"]) <= 0 or row["side"] not in {"BUY", "SELL"}:
+            raise ValueError("INVALID_ACTIVE_ORDER")
+        return Order(str(row["order_id"]), market, row["side"].lower(), exact(row["original_qty"]),
+                     exact(row["executed_qty"]), "OPEN", str(row.get("user_order_id") or client_id)), True
 
     def resolve_completed_order(self, market, order_id, client_id, side, quantity, probe):
         """Read one fill-history page. Only exact, cumulative full fills are terminal.
@@ -342,7 +371,7 @@ class CoinoneSpot(SpotAdapter):
         if more:
             cursors.add(next_cursor)
         # Commit only after validating the whole page; a failed read can retry it.
-        probe.update(trades=trades, cursor=next_cursor, cursors=list(cursors), filled=exact(filled))
+        probe.update(trades=trades, cursor=next_cursor, cursors=list(cursors), filled=exact(filled), complete=not more)
         if filled != decimal(quantity):
             return None, more
         fee = exact(sum((decimal(t[3]) for t in trades.values()), Decimal(0))) if all(t[3] is not None for t in trades.values()) else None
@@ -439,6 +468,10 @@ class CoinoneSpot(SpotAdapter):
 class KorbitSpot(SpotAdapter):
     exchange = "korbit"
 
+    def is_order_missing(self, error):
+        return (isinstance(error, ExchangeRequestError) and error.exchange == self.exchange
+                and error.code == "ORDER_NOT_FOUND")
+
     def pair(self, market):
         super().pair(market)
         quote, base = market.split("-")
@@ -468,6 +501,9 @@ class KorbitSpot(SpotAdapter):
     def lookup(self, market, order_id=None, client_id=None):
         row = self.client.get_order(self.pair(market),
             **({"order_id": order_id} if order_id else {"client_order_id": client_id}))
+        return self.normalize(row, market)
+
+    def normalize(self, row, market):
         if row.get("symbol") != self.pair(market):
             raise ValueError("ORDER_MARKET_MISMATCH")
         status = {"pending": "OPEN", "unfilled": "OPEN", "open": "OPEN", "partiallyFilled": "OPEN",

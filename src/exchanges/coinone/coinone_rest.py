@@ -520,15 +520,7 @@ class CoinoneRest(ExchangeResponseMixin):
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         _ = limit
-        quote_currency, target_currency = _to_pair(ticker)
-        data = self._request(
-            "/v2.1/order/active_orders",
-            {
-                "quote_currency": quote_currency,
-                "target_currency": target_currency,
-                "order_type": ["LIMIT", "STOP_LIMIT"],
-            },
-        )
+        data = self.list_active_orders(ticker=ticker)
         rows = data.get("active_orders")
         if not isinstance(rows, list):
             return []
@@ -551,6 +543,18 @@ class CoinoneRest(ExchangeResponseMixin):
                 }
             )
         return result
+
+    def list_active_orders(self, *, ticker: str) -> dict[str, Any]:
+        """Unfiltered response for identity/absence checks; callers validate rows."""
+        quote_currency, target_currency = _to_pair(ticker)
+        return self._request(
+            "/v2.1/order/active_orders",
+            {
+                "quote_currency": quote_currency,
+                "target_currency": target_currency,
+                "order_type": ["LIMIT", "STOP_LIMIT"],
+            },
+        )
 
     def list_all_open_orders(self) -> dict[str, Any]:
         return self._request("/v2.1/order/active_orders/all")

@@ -24,6 +24,22 @@ class ExchangeRequestError(RuntimeError):
         super().__init__(public_message or f"{exchange.upper()}_{code}")
 
     @property
+    def authorization_failed(self):
+        """Authentication/access failures cannot be repaired by read retries.
+
+        Coinone returns permission errors with HTTP 200. Error classification
+        stays here in TradingTools; consumers decide which jobs to stop.
+        """
+        if self.status_code in {401, 403}:
+            return True
+        if self.exchange == "coinone":
+            return str(self.code) in {"4", "8", "10", "11", "12", "21", "22", "23", "24", "25", "27", "40", "50", "52", "53", "54", "121", "123", "151", "1206"}
+        if self.exchange in {"upbit", "bithumb"}:
+            return str(self.code) in {"out_of_scope", "invalid_query_payload", "jwt_verification", "expired_access_key",
+                                     "expired_jwt", "no_authorization_ip", "no_authorization_token", "NotAllowIP", "blocked_member_id"}
+        return False
+
+    @property
     def transient_read_failure(self):
         """Read-only retry classification; never authorizes mutation replay."""
         return (self.code in {"TRANSPORT_FAILED", "RATE_LIMITED"}

@@ -529,11 +529,11 @@ class BithumbRest(ExchangeResponseMixin):
         }
 
         data = self._request("GET", "/v1/orders", params=params)
-        if isinstance(data, list):
-            return [item for item in data if isinstance(item, dict)]
         if isinstance(data, dict) and isinstance(data.get("data"), list):
-            return [item for item in data["data"] if isinstance(item, dict)]
-        return []
+            data = data["data"]
+        if not isinstance(data, list) or any(not isinstance(item, dict) for item in data):
+            raise BithumbRestError("bithumb", "INVALID_RESPONSE", status_code=200)
+        return data
 
     def get_open_orders(self, **kwargs: Any) -> list[dict[str, Any]]:
         kwargs.setdefault("state", "wait")

@@ -188,6 +188,14 @@ API_SURFACE: Final[dict[str, Any]] = {
                     "endpoint": "/v2.1/order/active_orders",
                     "doc": _doc("active-orders"),
                 },
+                "list_active_orders(ticker)": {
+                    "category": "Private / Order",
+                    "auth": "required",
+                    "method": "POST",
+                    "endpoint": "/v2.1/order/active_orders",
+                    "doc": _doc("find-active-orders"),
+                    "description": "Raw identity-preserving response for order recovery.",
+                },
                 "list_all_open_orders()": {
                     "category": "Private / Order",
                     "auth": "required",
