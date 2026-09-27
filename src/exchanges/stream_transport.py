@@ -23,9 +23,11 @@ PRIVATE_URLS = {
 }
 
 
-def _connect(url, *, headers=None, connect=None):
+def _connect(url, *, headers=None, connect=None, suppress_origin=False):
     import websocket
     kwargs = {"timeout": 10}
+    if suppress_origin:
+        kwargs["suppress_origin"] = True
     if headers is not None:
         kwargs["header"] = headers
     return (connect or websocket.create_connection)(url, **kwargs)
@@ -38,7 +40,8 @@ def open_public_stream(exchange, *, streams=None, connect=None):
         if not streams or any(not re.fullmatch(r"[a-z0-9]+@depth5", s) for s in streams):
             raise ValueError("invalid Binance depth streams")
         url += "/".join(streams)
-    return _connect(url, connect=connect)
+    # Server-side Upbit public streams must not synthesize a browser Origin.
+    return _connect(url, connect=connect, suppress_origin=exchange == "upbit")
 
 
 def _markets(markets):

@@ -229,7 +229,7 @@ class UpbitDataBank:
         while not self._stop_event.is_set():
             ws = None
             try:
-                ws = websocket.create_connection(self.WS_URL, timeout=10)
+                ws = websocket.create_connection(self.WS_URL, timeout=10, suppress_origin=True)
                 ws.send(json.dumps(subscribe_payload))
 
                 while not self._stop_event.is_set():
@@ -444,7 +444,9 @@ class UpbitPublicWebSocket:
             )
 
         self._stop_event.clear()
-        self._ws = websocket.create_connection(self.url, timeout=self.timeout_seconds)
+        self._ws = websocket.create_connection(
+            self.url, timeout=self.timeout_seconds, suppress_origin=True
+        )
         self._start_ping_loop()
 
     def _start_ping_loop(self) -> None:
