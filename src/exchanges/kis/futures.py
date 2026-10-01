@@ -34,7 +34,10 @@ class KisFuturesMixin:
                 error.outcome_unknown = True
             raise
         if str(payload.get("rt_cd")) != "0":
-            raise ExchangeRequestError("kis", "FUTURES_REQUEST_REJECTED", outcome_unknown=method == "POST")
+            code = str(payload.get("msg_cd", ""))
+            if not re.fullmatch(r"[A-Za-z0-9_]{1,40}", code):
+                code = "FUTURES_REQUEST_REJECTED"
+            raise ExchangeRequestError("kis", code)
         return payload
 
     def _future_pages(self, read, category):
@@ -95,19 +98,19 @@ class KisFuturesMixin:
             raise ExchangeRequestError("kis", "INVALID_CONTRACT_EXPIRY") from None
         return {"name": str(row.get("hts_kor_isnm", "")), "expiry": expiry, "symbol": symbol}
 
-    def future_capacity(self, symbol, side, *, night=False):
+    def future_capacity(self, symbol, side, *, night=False, price=None):
         if side not in {"buy", "sell"}:
             raise ValueError("INVALID_SIDE")
         payload = self._future_call("GET", "trading/" + ("inquire-psbl-ngt-order" if night else "inquire-psbl-order"),
             "STTN5105R" if night else "TTTO5105R", {"CANO": self.cano, "ACNT_PRDT_CD": self.product_code,
             "PDNO": self._future_symbol(symbol), "SLL_BUY_DVSN_CD": "01" if side == "sell" else "02",
-            "UNIT_PRICE": "0", "ORD_DVSN_CD": "02"})
+            "UNIT_PRICE": self._future_price(price), "ORD_DVSN_CD": "02" if price is None else "01"})
         qty = amount(payload.get("output", {}).get("tot_psbl_qty"))
         if qty < 0 or qty != int(qty):
             raise ExchangeRequestError("kis", "INVALID_CAPACITY")
         return int(qty)
 
-    def future_order(self, symbol, side, *, night=False, quantity=1):
+    def future_order(self, symbol, side, *, night=False, quantity=1, price=None):
         if side not in {"buy", "sell"}:
             raise ValueError("INVALID_SIDE")
         if type(quantity) is not int or not 1 <= quantity <= 10000:
@@ -115,11 +118,56 @@ class KisFuturesMixin:
         payload = self._future_call("POST", "trading/order", "STTN1101U" if night else "TTTO1101U", {
             "ORD_PRCS_DVSN_CD": "02", "CANO": self.cano, "ACNT_PRDT_CD": self.product_code,
             "SLL_BUY_DVSN_CD": "01" if side == "sell" else "02", "SHTN_PDNO": self._future_symbol(symbol),
-            "ORD_QTY": str(quantity), "UNIT_PRICE": "0", "NMPR_TYPE_CD": "02", "KRX_NMPR_CNDT_CD": "0",
-            "ORD_DVSN_CD": "02", "CTAC_TLNO": "", "FUOP_ITEM_DVSN_CD": ""})
+            "ORD_QTY": str(quantity), "UNIT_PRICE": self._future_price(price),
+            "NMPR_TYPE_CD": "02" if price is None else "01", "KRX_NMPR_CNDT_CD": "0",
+            "ORD_DVSN_CD": "02" if price is None else "01", "CTAC_TLNO": "", "FUOP_ITEM_DVSN_CD": ""})
         output = payload.get("output", {})
+        if not isinstance(output, dict):
+            raise ExchangeRequestError("kis", "ORDER_RESULT_UNKNOWN", outcome_unknown=True)
         order_id = str(output.get("ODNO") or output.get("odno") or "")
         if not re.fullmatch(r"\d{1,20}", order_id):
+            raise ExchangeRequestError("kis", "ORDER_RESULT_UNKNOWN", outcome_unknown=True)
+        return order_id
+
+    @staticmethod
+    def _future_price(price):
+        if price is None:
+            return "0"
+        value = amount(price)
+        if value <= 0:
+            raise ValueError("INVALID_LIMIT_PRICE")
+        return format(value, "f")
+
+    def future_cancel(self, order_id, *, night=False, quantity=None):
+        """Cancel all remaining contracts, or an explicit positive partial quantity.
+
+        Acknowledgement is NOT terminal confirmation. Reconcile via WS/history.
+        """
+        return self._future_change(order_id, night=night, quantity=quantity, cancel=True)
+
+    def future_modify(self, order_id, price, *, night=False, quantity=None):
+        """Amend a limit order; returned ID is the amendment request order ID."""
+        if price is None:
+            raise ValueError("LIMIT_PRICE_REQUIRED")
+        return self._future_change(order_id, night=night, quantity=quantity, price=price)
+
+    def _future_change(self, order_id, *, night, quantity, cancel=False, price=None):
+        if not isinstance(order_id, str) or not re.fullmatch(r"[0-9]{1,20}", order_id):
+            raise ValueError("INVALID_ORDER_ID")
+        if quantity is not None and (type(quantity) is not int or not 1 <= quantity <= 10000):
+            raise ValueError("INVALID_CONTRACT_QUANTITY")
+        payload = self._future_call("POST", "trading/order-rvsecncl", "TTTN1103U" if night else "TTTO1103U", {
+            "ORD_PRCS_DVSN_CD": "02", "CANO": self.cano, "ACNT_PRDT_CD": self.product_code,
+            "RVSE_CNCL_DVSN_CD": "02" if cancel else "01", "ORGN_ODNO": order_id,
+            "ORD_QTY": "0" if quantity is None else str(quantity),
+            "UNIT_PRICE": "0" if cancel else self._future_price(price),
+            "NMPR_TYPE_CD": "01", "KRX_NMPR_CNDT_CD": "0",
+            "RMN_QTY_YN": "Y" if quantity is None else "N", "ORD_DVSN_CD": "01", "FUOP_ITEM_DVSN_CD": ""})
+        output = payload.get("output", {})
+        if not isinstance(output, dict):
+            raise ExchangeRequestError("kis", "ORDER_RESULT_UNKNOWN", outcome_unknown=True)
+        order_id = str(output.get("ODNO") or output.get("odno") or "")
+        if not re.fullmatch(r"[0-9]{1,20}", order_id):
             raise ExchangeRequestError("kis", "ORDER_RESULT_UNKNOWN", outcome_unknown=True)
         return order_id
 

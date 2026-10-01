@@ -1,1 +1,1 @@
-"""Korea Investment & Securities read-only account integration."""
+"""KIS domestic futures REST and WebSocket integration."""

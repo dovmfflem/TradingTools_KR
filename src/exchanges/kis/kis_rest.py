@@ -31,7 +31,7 @@ class KisRest(KisFuturesMixin):
     EXPIRY_MARGIN_SECONDS = 300
     REFRESH_COOLDOWN_SECONDS = 60
 
-    def __init__(self, api_key, secret_key, account, *, token_cache, session=None, clock=time.time):
+    def __init__(self, api_key, secret_key, account, *, token_cache, session=None, clock=time.time, before_request=None):
         if not api_key or not secret_key:
             raise ValueError("KIS API and Secret are required")
         if not re.fullmatch(r"[0-9]{8}-[0-9]{2}", account.strip()):
@@ -42,6 +42,7 @@ class KisRest(KisFuturesMixin):
         self.cache = token_cache
         self.session = session or requests.Session()
         self.clock = clock
+        self.before_request = before_request
         identity = json.dumps([self.BASE_URL, api_key, secret_key], separators=(",", ":"))
         self.cache_id = hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
@@ -49,6 +50,8 @@ class KisRest(KisFuturesMixin):
         self.session.close()
 
     def _request(self, method, path, **kwargs):
+        if self.before_request is not None:
+            self.before_request()
         url = self.BASE_URL + path
         reject_retrying_transport(self.session, url)
         try:
@@ -116,6 +119,15 @@ class KisRest(KisFuturesMixin):
                 raise
             self.cache.save(self.cache_id, {"access_token": token, "expires_at": expires_at})
             return token
+
+    def get_ws_approval(self):
+        """Issue a WebSocket approval key once; caller owns retry scheduling."""
+        payload = self._request("POST", "/oauth2/Approval", json={
+            "grant_type": "client_credentials", "appkey": self.api_key, "secretkey": self.secret_key})
+        key = payload.get("approval_key")
+        if not isinstance(key, str) or not key or len(key) > 4096:
+            raise ExchangeRequestError("kis", "INVALID_WS_APPROVAL")
+        return key
 
     def get_future_balance(self, *, night=False, context_fk="", context_nk="", continuation=""):
         token = self.get_access_token()
