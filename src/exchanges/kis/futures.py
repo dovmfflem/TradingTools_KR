@@ -85,6 +85,32 @@ class KisFuturesMixin:
         return {"bid": str(bid), "ask": str(ask), "time": stamp,
                 "name": str(info.get("hts_kor_isnm", "")), "symbol": symbol}
 
+    def future_orderbook(self, symbol, *, night=False, product_kind="commodity"):
+        """REST five-level book. No WebSocket approval or mutation is performed."""
+        if product_kind not in {"commodity", "index", "stock"}:
+            raise ValueError("INVALID_FUTURES_KIND")
+        symbol = self._future_symbol(symbol)
+        payload = self._future_call("GET", "quotations/inquire-asking-price", "FHMIF10010000", {
+            "FID_COND_MRKT_DIV_CODE": "CM" if night else {"commodity": "CF", "index": "F", "stock": "JF"}[product_kind],
+            "FID_INPUT_ISCD": symbol})
+        book = payload.get("output2")
+        if not isinstance(book, dict):
+            raise ExchangeRequestError("kis", "INVALID_ORDERBOOK")
+        stamp = str(book.get("aspr_acpt_hour", ""))
+        if not re.fullmatch(r"\d{6}", stamp):
+            raise ExchangeRequestError("kis", "INVALID_ORDERBOOK_TIME")
+        def levels(side):
+            result = []
+            for i in range(1, 6):
+                price = amount(book.get(f"futs_{side}p{i}"))
+                qty = amount(book.get(f"{side}p_rsqn{i}"))
+                if price < 0 or qty < 0 or qty != int(qty) or (price == 0 and qty != 0):
+                    raise ExchangeRequestError("kis", "INVALID_ORDERBOOK_LEVEL")
+                if price > 0:
+                    result.append({"price": str(price), "quantity": str(qty)})
+            return result
+        return {"symbol": symbol, "asks": levels("ask"), "bids": levels("bid"), "time": stamp}
+
     def future_contract(self, symbol, *, night=False, product_kind="commodity"):
         if product_kind not in {"commodity", "index", "stock"}:
             raise ValueError("INVALID_FUTURES_KIND")
