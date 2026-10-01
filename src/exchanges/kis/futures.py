@@ -224,10 +224,21 @@ class KisFuturesMixin:
             qty = amount(row.get("cblc_qty"))
             if qty < 0 or qty != int(qty):
                 raise ExchangeRequestError("kis", "INVALID_POSITION")
-            side = str(row.get("sll_buy_dvsn_cd") or row.get("sll_buy_dvsn_name", "")).strip()
-            if side in {"01", "매도"}:
+            # A flat row carries no exposure, even when its side is blank.
+            if qty == 0:
+                continue
+            # Normalize each field BEFORE fallback: padded blank codes are truthy
+            # and used to hide the valid day/night Korean side name.
+            code = str(row.get("sll_buy_dvsn_cd") or "").strip()
+            name = str(row.get("sll_buy_dvsn_name") or "").strip()
+            code_side = {"01": "sell", "02": "buy"}.get(code)
+            name_side = {"매도": "sell", "매수": "buy"}.get(name)
+            if (code and not code_side) or (code_side and name_side and code_side != name_side):
+                raise ExchangeRequestError("kis", "INVALID_POSITION_SIDE")
+            side = code_side or name_side
+            if side == "sell":
                 short_qty += qty
-            elif side in {"02", "매수"}:
+            elif side == "buy":
                 long_qty += qty
             else:
                 raise ExchangeRequestError("kis", "INVALID_POSITION_SIDE")
