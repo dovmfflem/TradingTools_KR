@@ -90,6 +90,27 @@ class FuturesTests(unittest.TestCase):
         client = self.client({"rt_cd": "0", "ctx_area_nk200": "more", "output1": [], "output2": {}})
         with self.assertRaisesRegex(ExchangeRequestError, "PAGINATED"): client.future_account("175V10")
 
+    def test_account_margin_and_signed_pnl_day_and_night(self):
+        for night in (False, True):
+            summary = {"dnca_cash": "100000", "ord_psbl_cash": "20000", "evlu_amt_smtl": "28000000",
+                       "mgna_tota": "80000", "cash_mgna": "75000", "evlu_pfls_amt_smtl": "-12500",
+                       "prsm_dpast" if night else "prsm_dpast_amt": "87500"}
+            client = self.client({"rt_cd": "0", "output1": [], "output2": summary})
+            balance = client.future_account("175V10", night=night)
+            self.assertEqual(balance["margin"], "80000")
+            self.assertEqual(balance["cashMargin"], "75000")
+            self.assertEqual(balance["estimatedAssets"], "87500")
+            self.assertEqual(balance["evaluationPnl"], "-12500")
+            self.assertIsNone(balance["maintenanceMargin"])
+
+    def test_missing_optional_account_fields_are_not_zero(self):
+        client = self.client({"rt_cd": "0", "output1": [], "output2": {
+            "dnca_cash": "0", "ord_psbl_cash": "0", "evlu_amt_smtl": "0", "mgna_tota": ""}})
+        balance = client.future_account("175V10")
+        self.assertIsNone(balance["margin"])
+        self.assertIsNone(balance["evaluationPnl"])
+        self.assertEqual(balance["deposit"], "0")
+
     def test_night_history_inclusive_start_exclusive_end_and_normalization(self):
         client = self.client({"rt_cd": "0", "output1": [{"pdno": "175V10", "odno": "000001", "ord_dt": "20260924",
             "sll_buy_dvsn_cd": "01", "ord_qty": "2", "tot_ccld_qty": "1", "qty": "1", "avg_idx": "1400.1"}]})

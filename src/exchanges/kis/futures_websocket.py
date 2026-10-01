@@ -22,16 +22,22 @@ class KisFuturesWebSocket:
     URL = "ws://ops.koreainvestment.com:21000/tryitout"
     MAX_FRAME = 262144
 
-    def __init__(self, rest, symbols, *, hts_id, night=False, connector=None, clock=time.monotonic):
-        if not isinstance(hts_id, str) or not re.fullmatch(r"[A-Za-z0-9_]{1,32}", hts_id):
+    def __init__(self, rest, symbols, *, hts_id, night=False, connector=None, clock=time.monotonic,
+                 product_kind="commodity", notices=True):
+        if notices and (not isinstance(hts_id, str) or not re.fullmatch(r"[A-Za-z0-9_]{1,32}", hts_id)):
             raise ValueError("HTS_ID_REQUIRED")
+        if product_kind not in {"commodity", "index", "stock"}:
+            raise ValueError("INVALID_FUTURES_KIND")
         if not symbols or isinstance(symbols, str) or len(symbols) > 39:
             raise ValueError("INVALID_SUBSCRIPTIONS")
         self.symbols = tuple(dict.fromkeys(KisFuturesMixin._future_symbol(s) for s in symbols))
         self.rest, self.hts_id, self.night = rest, hts_id, night
-        self.quote_tr = "H0MFASP0" if night else "H0CFASP0"
+        self.quote_tr = "H0MFASP0" if night else {"commodity": "H0CFASP0", "index": "H0IFASP0", "stock": "H0ZFASP0"}[product_kind]
+        self.depth = 10 if product_kind == "stock" and not night else 5
         self.notice_tr = "H0MFCNI0" if night else "H0IFCNI0"
-        self.subscriptions = {(self.quote_tr, s) for s in self.symbols} | {(self.notice_tr, hts_id)}
+        self.subscriptions = {(self.quote_tr, s) for s in self.symbols}
+        if notices:
+            self.subscriptions.add((self.notice_tr, hts_id))
         self.connector = connector or websocket.create_connection
         self.clock, self.lock = clock, Lock()
         self.socket, self.keys, self.acked = None, {}, set()
@@ -162,7 +168,7 @@ class KisFuturesWebSocket:
         elif kind != "0":
             raise ExchangeRequestError("kis", "WS_INVALID_QUOTE_FRAME")
         fields = payload.split("^")
-        width = (19 if self.night else 22) if tr_id == self.notice_tr else 38
+        width = (19 if self.night else 22) if tr_id == self.notice_tr else 6 * self.depth + 8
         if len(fields) != width * count:
             raise ExchangeRequestError("kis", "WS_INVALID_FIELD_COUNT")
         return [event for i in range(0, len(fields), width)
@@ -172,11 +178,22 @@ class KisFuturesWebSocket:
         if tr_id == self.quote_tr:
             if fields[0] not in self.symbols:
                 raise ExchangeRequestError("kis", "WS_SYMBOL_MISMATCH")
-            bid, ask = amount(fields[7]), amount(fields[2])
+            depth = self.depth
+            bid, ask = amount(fields[2 + depth]), amount(fields[2])
             if bid < 0 or ask < 0:
                 raise ExchangeRequestError("kis", "WS_INVALID_QUOTE")
+            def levels(price_offset, quantity_offset):
+                result = []
+                for i in range(depth):
+                    price, qty = amount(fields[price_offset + i]), amount(fields[quantity_offset + i])
+                    if price < 0 or qty < 0 or qty != int(qty):
+                        raise ExchangeRequestError("kis", "WS_INVALID_DEPTH")
+                    if price > 0:
+                        result.append({"price": str(price), "quantity": str(qty)})
+                return result
             return {"event": "quote", "symbol": fields[0], "time": fields[1],
-                    "bid": str(bid), "ask": str(ask), "tradable": 0 < bid <= ask}
+                    "bid": str(bid), "ask": str(ask), "tradable": 0 < bid <= ask,
+                    "asks": levels(2, 2 + 4 * depth), "bids": levels(2 + depth, 2 + 5 * depth)}
         if fields[1] != self.rest.cano + self.rest.product_code or fields[7] not in self.symbols:
             # An HTS subscription may include other accounts/products.
             return None

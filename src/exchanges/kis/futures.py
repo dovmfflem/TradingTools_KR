@@ -85,9 +85,12 @@ class KisFuturesMixin:
         return {"bid": str(bid), "ask": str(ask), "time": stamp,
                 "name": str(info.get("hts_kor_isnm", "")), "symbol": symbol}
 
-    def future_contract(self, symbol, *, night=False):
+    def future_contract(self, symbol, *, night=False, product_kind="commodity"):
+        if product_kind not in {"commodity", "index", "stock"}:
+            raise ValueError("INVALID_FUTURES_KIND")
         payload = self._future_call("GET", "quotations/inquire-price", "FHMIF10000000", {
-            "FID_COND_MRKT_DIV_CODE": "CM" if night else "CF", "FID_INPUT_ISCD": self._future_symbol(symbol)})
+            "FID_COND_MRKT_DIV_CODE": "CM" if night else {"commodity": "CF", "index": "F", "stock": "JF"}[product_kind],
+            "FID_INPUT_ISCD": self._future_symbol(symbol)})
         row = payload.get("output1", {})
         expiry = str(row.get("futs_last_tr_date", ""))
         if not re.fullmatch(r"\d{8}", expiry):
@@ -197,12 +200,23 @@ class KisFuturesMixin:
             result.append({"id": str(row["odno"]), "symbol": symbol,
                 "side": {"01": "sell", "02": "buy"}[row["sll_buy_dvsn_cd"]], "quantity": str(qty),
                 "filled": str(filled), "remaining": str(remaining), "date": str(row.get("ord_dt", "")),
-                "price": str(amount(row.get("avg_idx", "0")))})
+                "price": str(amount(row.get("avg_idx", "0"))),
+                "orderPrice": str(amount(row.get("ord_idx4" if night else "ord_idx", "0"))),
+                "orderType": "market" if str(row.get("nmpr_type_cd")) == "02" or "시장가" in str(row.get("nmpr_type_name", "")) else "limit",
+                "time": str(row.get("ord_tmd", ""))})
         return result
 
     def future_account(self, symbol, *, night=False):
         positions, summary = self._future_pages(lambda fk, nk, continuation: self.get_future_balance(
             night=night, context_fk=fk, context_nk=nk, continuation=continuation), "ACCOUNT")
+        if not isinstance(summary, dict):
+            raise ExchangeRequestError("kis", "INVALID_ACCOUNT_SUMMARY")
+        def optional(*keys):
+            for key in keys:
+                value = summary.get(key)
+                if value is not None and str(value).strip():
+                    return str(amount(value))
+            return None
         long_qty = short_qty = Decimal(0)
         for row in positions:
             if str(row.get("shtn_pdno") or row.get("pdno", "")).strip() != symbol:
@@ -220,4 +234,9 @@ class KisFuturesMixin:
         return {"short": int(short_qty), "long": int(long_qty),
                 "deposit": str(amount(summary.get("dnca_cash"))),
                 "buyingPower": str(amount(summary.get("ord_psbl_cash"))),
-                "evaluation": str(amount(summary.get("evlu_amt_smtl")))}
+                "evaluation": str(amount(summary.get("evlu_amt_smtl"))),
+                "margin": optional("mgna_tota"),
+                "cashMargin": optional("cash_mgna"),
+                "estimatedAssets": optional("prsm_dpast_amt", "prsm_dpast"),
+                "evaluationPnl": optional("evlu_pfls_amt_smtl"),
+                "maintenanceMargin": optional("mmga_tot_amt")}
