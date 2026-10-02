@@ -5,6 +5,7 @@ Application code supplies session selection and buying-power policy.
 """
 import re
 import time
+from decimal import ROUND_HALF_UP
 from ..spot_trading import Order, Policy, decimal
 from ..api_error import ExchangeRequestError
 
@@ -30,6 +31,19 @@ class KisGridAdapter:
         # Futures buying power is queried for the actual order by the caller.
         # Never misrepresent collateral as spendable spot coins.
         return {}
+
+    def normalize_quote(self, market, bid, ask):
+        # This adapter supports USD futures (0.1 KRW). Normalize feed precision
+        # before strategy comparisons, not just when formatting notifications.
+        policy = self.policy(market)
+        def price(value):
+            value = decimal(value)
+            tick = next(decimal(tick) for lower, tick in reversed(policy.bands) if value >= decimal(lower))
+            return (value / tick).to_integral_value(rounding=ROUND_HALF_UP) * tick
+        bid, ask = decimal(bid), decimal(ask)
+        if bid <= 0 or ask < bid:
+            return bid, ask  # The engine discards invalid/crossed quotes.
+        return price(bid), price(ask)
 
     def submit(self, market, side, price, quantity, client_id):
         self.policy(market).validate(side, price, quantity)

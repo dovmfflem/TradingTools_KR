@@ -126,7 +126,10 @@ class KisRest(KisFuturesMixin):
             "grant_type": "client_credentials", "appkey": self.api_key, "secretkey": self.secret_key})
         key = payload.get("approval_key")
         if not isinstance(key, str) or not key or len(key) > 4096:
-            raise ExchangeRequestError("kis", "INVALID_WS_APPROVAL")
+            code = payload.get("error_code") or payload.get("msg_cd")
+            if not isinstance(code, str) or not re.fullmatch(r"[A-Za-z0-9_]{1,40}", code):
+                code = "INVALID_WS_APPROVAL"
+            raise ExchangeRequestError("kis", code)
         return key
 
     def get_future_balance(self, *, night=False, context_fk="", context_nk="", continuation=""):

@@ -67,8 +67,55 @@ class KisGridRestTests(KisRestTests):
         self.assertEqual(c.session.calls[0][2]["json"]["secretkey"], "fixture-secret")
         self.assertEqual(c.session.calls[0][2]["timeout"], (3, 5))
 
+    def test_approval_preserves_safe_error_code_without_secret_message(self):
+        c = self.client([Response({"error_code": "EGW00103", "error_description": "secret-fixture"})])
+        with self.assertRaises(ExchangeRequestError) as caught:
+            c.get_ws_approval()
+        self.assertEqual(caught.exception.code, "EGW00103")
+        self.assertNotIn("secret-fixture", str(caught.exception))
+
 
 class KisGridWsTests(unittest.TestCase):
+    def test_grid_quote_normalization_preserves_invalid_spread_and_valid_ticks(self):
+        from src.exchanges.kis.grid_adapter import KisGridAdapter
+        from decimal import Decimal
+        adapter = KisGridAdapter(Mock(), lambda: None)
+        self.assertEqual(adapter.normalize_quote("KRW-A75610", "1358.60002559", "1358.70000117"),
+                         (Decimal("1358.6"), Decimal("1358.7")))
+        self.assertEqual(adapter.normalize_quote("KRW-A75610", "1358.6", "1358.7"),
+                         (Decimal("1358.6"), Decimal("1358.7")))
+        bid, ask = adapter.normalize_quote("KRW-A75610", "1358.62", "1358.61")
+        self.assertGreater(bid, ask)
+
+    def test_approval_failure_preserves_http_status_and_retry_after(self):
+        rest = Mock()
+        rest.get_ws_approval.side_effect = ExchangeRequestError("kis", "HTTP_FAILED", status_code=429, retry_after_seconds=60)
+        connector = Mock()
+        ws = KisFuturesWebSocket(rest, ["175V10"], hts_id="fixture", connector=connector)
+        with self.assertRaises(ExchangeRequestError) as caught:
+            ws.connect()
+        self.assertEqual(caught.exception.status_code, 429)
+        self.assertEqual(caught.exception.retry_after_seconds, 60)
+        connector.assert_not_called()
+        self.assertIsNone(ws.socket)
+
+    def test_subscription_rejection_preserves_machine_code_only(self):
+        ws, sock, _ = self.fixture()
+        sock.recv.return_value = json.dumps({"header": {"tr_id": ws.notice_tr, "tr_key": "fixture"},
+            "body": {"rt_cd": "1", "msg_cd": "OPSP0007", "msg1": "secret-fixture"}})
+        with self.assertRaises(ExchangeRequestError) as caught:
+            ws.receive()
+        self.assertEqual(caught.exception.code, "OPSP0007")
+        self.assertNotIn("secret-fixture", str(caught.exception))
+        self.assertFalse(ws.ready)
+
+    def test_transport_close_is_not_reported_as_invalid_frame(self):
+        ws, sock, _ = self.fixture()
+        sock.recv.side_effect = websocket.WebSocketConnectionClosedException("private-fixture")
+        with self.assertRaisesRegex(ExchangeRequestError, "WS_CLOSED"):
+            ws.receive()
+        self.assertIsNone(ws.socket)
+
     def fixture(self, night=False):
         rest = Mock(cano="12345678", product_code="03")
         rest.get_ws_approval.return_value = "approval-fixture"

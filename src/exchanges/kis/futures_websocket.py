@@ -71,6 +71,9 @@ class KisFuturesWebSocket:
                     self.socket.settimeout(min(5, remaining))
                     self.socket.send(json.dumps({"header": {"approval_key": approval, "custtype": "P",
                         "tr_type": "1", "content-type": "utf-8"}, "body": {"input": {"tr_id": tr_id, "tr_key": key}}}))
+            except ExchangeRequestError:
+                self._failed()
+                raise
             except Exception:
                 self._failed()
                 raise ExchangeRequestError("kis", "WS_CONNECT_FAILED") from None
@@ -120,6 +123,9 @@ class KisFuturesWebSocket:
                 if self.clock() - self.connected_at >= 60:
                     self.failures = 0
             return result
+        except websocket.WebSocketConnectionClosedException:
+            self._failed()
+            raise ExchangeRequestError("kis", "WS_CLOSED") from None
         except ExchangeRequestError:
             self._failed()
             raise
@@ -142,7 +148,12 @@ class KisFuturesWebSocket:
                 raise ExchangeRequestError("kis", "WS_UNEXPECTED_SUBSCRIPTION")
             body = message.get("body", {})
             if str(body.get("rt_cd")) != "0":
-                raise ExchangeRequestError("kis", "WS_SUBSCRIPTION_REJECTED")
+                # Preserve the documented machine code, never msg1/raw frames
+                # (which can contain the HTS ID or subscription credentials).
+                code = body.get("msg_cd")
+                if not isinstance(code, str) or not re.fullmatch(r"[A-Za-z0-9_]{1,40}", code):
+                    code = "WS_SUBSCRIPTION_REJECTED"
+                raise ExchangeRequestError("kis", code)
             if tr_id == self.notice_tr:
                 output = body.get("output", {})
                 key, iv = str(output.get("key", "")).encode(), str(output.get("iv", "")).encode()
