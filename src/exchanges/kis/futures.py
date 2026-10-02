@@ -244,6 +244,7 @@ class KisFuturesMixin:
                     return str(amount(value))
             return None
         long_qty = short_qty = Decimal(0)
+        liquidatable = {"buy": 0, "sell": 0}
         for row in positions:
             if str(row.get("shtn_pdno") or row.get("pdno", "")).strip() != symbol:
                 continue
@@ -268,7 +269,20 @@ class KisFuturesMixin:
                 long_qty += qty
             else:
                 raise ExchangeRequestError("kis", "INVALID_POSITION_SIDE")
+            # Optional display data: an absent/invalid field must not look like
+            # zero available contracts or invalidate otherwise valid balances.
+            try:
+                available = amount(row.get("lqd_psbl_qty"))
+                if available < 0 or available != int(available):
+                    raise ValueError()
+            except (ExchangeRequestError, ValueError):
+                liquidatable[side] = None
+            else:
+                if liquidatable[side] is not None:
+                    liquidatable[side] += int(available)
         return {"short": int(short_qty), "long": int(long_qty),
+                "longLiquidatable": liquidatable["buy"],
+                "shortLiquidatable": liquidatable["sell"],
                 "deposit": str(amount(summary.get("dnca_cash"))),
                 "buyingPower": str(amount(summary.get("ord_psbl_cash"))),
                 "evaluation": str(amount(summary.get("evlu_amt_smtl"))),

@@ -34,6 +34,32 @@ class PositionSideTests(unittest.TestCase):
             with self.subTest(side=side), self.assertRaisesRegex(ExchangeRequestError, "INVALID_POSITION_SIDE"):
                 self.account([self.row(**side)])
 
+    def test_liquidatable_totals_by_side_day_and_night(self):
+        for night in (False, True):
+            result = self.account([
+                self.row("2", sll_buy_dvsn_cd="02", lqd_psbl_qty="1"),
+                self.row("3", sll_buy_dvsn_cd="02", lqd_psbl_qty="2"),
+                self.row("1", sll_buy_dvsn_cd="01", lqd_psbl_qty="0"),
+                {"shtn_pdno": "OTHER", "cblc_qty": "99", "lqd_psbl_qty": "99"},
+            ], night)
+            self.assertEqual((result["long"], result["longLiquidatable"]), (5, 3))
+            self.assertEqual((result["short"], result["shortLiquidatable"]), (1, 0))
+
+    def test_missing_or_invalid_liquidatable_is_unknown_not_zero(self):
+        for value in (None, "", "bad", "NaN", "-1", "1.5"):
+            with self.subTest(value=value):
+                result = self.account([
+                    self.row(sll_buy_dvsn_cd="02", lqd_psbl_qty=value),
+                    self.row(sll_buy_dvsn_cd="02", lqd_psbl_qty="2"),
+                ])
+                self.assertEqual(result["long"], 4)
+                self.assertIsNone(result["longLiquidatable"])
+                self.assertEqual(result["shortLiquidatable"], 0)
+
+    def test_no_positions_has_zero_liquidatable(self):
+        result = self.account([])
+        self.assertEqual((result["longLiquidatable"], result["shortLiquidatable"]), (0, 0))
+
 
 if __name__ == "__main__":
     unittest.main()
