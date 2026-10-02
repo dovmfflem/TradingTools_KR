@@ -181,7 +181,17 @@ class KisFuturesWebSocket:
         fields = payload.split("^")
         width = (19 if self.night else 22) if tr_id == self.notice_tr else 6 * self.depth + 8
         if len(fields) != width * count:
-            raise ExchangeRequestError("kis", "WS_INVALID_FIELD_COUNT")
+            if tr_id == self.notice_tr:
+                # An authenticated, decrypted notice with an unfamiliar schema
+                # is a reconciliation hint, never an inferred fill/cancellation.
+                # Keep the healthy socket instead of reconnecting on every order.
+                return [{"event": "order_reconcile", "reason": "WS_INVALID_FIELD_COUNT",
+                         "channel": tr_id, "fieldCount": len(fields), "expectedFieldCount": width * count,
+                         "recordCount": count, "requiresReconciliation": True}]
+            error = ExchangeRequestError("kis", "WS_INVALID_FIELD_COUNT")
+            error.diagnostic = {"channel": tr_id, "fieldCount": len(fields),
+                                "expectedFieldCount": width * count, "recordCount": count}
+            raise error
         return [event for i in range(0, len(fields), width)
                 if (event := self._record(tr_id, fields[i:i + width])) is not None]
 

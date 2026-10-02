@@ -76,6 +76,24 @@ class KisGridRestTests(KisRestTests):
 
 
 class KisGridWsTests(unittest.TestCase):
+    def test_unfamiliar_encrypted_notice_requests_rest_without_disconnect(self):
+        for night in (False, True):
+            ws, sock, _ = self.fixture(night)
+            self.ack(ws, sock)
+            pad = PKCS7(128).padder()
+            plain = pad.update(b"private-fixture^unknown-shape") + pad.finalize()
+            enc = Cipher(algorithms.AES(b"k" * 32), modes.CBC(b"i" * 16)).encryptor()
+            encrypted = base64.b64encode(enc.update(plain) + enc.finalize()).decode()
+            sock.recv.return_value = "1|" + ws.notice_tr + "|001|" + encrypted
+            event = ws.receive()[0]
+            self.assertEqual(event["event"], "order_reconcile")
+            self.assertEqual(event["fieldCount"], 2)
+            self.assertTrue(ws.ready)
+            self.assertEqual(ws.state, "HEALTHY")
+            self.assertNotIn("private-fixture", str(event))
+            self.assertNotIn("filled", event)
+            sock.close.assert_not_called()
+
     def test_grid_quote_normalization_preserves_invalid_spread_and_valid_ticks(self):
         from src.exchanges.kis.grid_adapter import KisGridAdapter
         from decimal import Decimal
