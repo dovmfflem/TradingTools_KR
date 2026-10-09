@@ -14,6 +14,11 @@ import requests
 class BybitSpotRestError(Exception):
     """Raised when a Bybit Spot REST API request fails."""
 
+    def __init__(self, message, *, code=None, http_status=None):
+        super().__init__(message)
+        self.code = code
+        self.http_status = http_status
+
 
 def _strip_comment(line: str) -> str:
     in_single = False
@@ -189,12 +194,15 @@ class BybitSpotRest:
         except ValueError:
             payload = {"raw": response.text}
 
-        if not response.ok:
+        value = payload.get("retCode") if isinstance(payload, dict) else None
+        code = int(value) if isinstance(value, (int, str)) and str(value).lstrip("-").isdigit() else None
+        status = response.status_code if isinstance(response.status_code, int) else None
+        if not response.ok or code not in (None, 0):
+            # Never include raw envelopes: query-api can return credential data.
             raise BybitSpotRestError(
-                f"{method} {path} failed (status={response.status_code}): {payload}"
+                f"{method} {path} failed (status={status}, code={code})",
+                code=code, http_status=status,
             )
-        if isinstance(payload, dict) and int(payload.get("retCode", 0)) != 0:
-            raise BybitSpotRestError(f"{method} {path} failed: {payload}")
 
         return payload
 
