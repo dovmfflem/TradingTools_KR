@@ -439,12 +439,12 @@ class BinanceFuturesRest:
             return [item for item in data["data"] if isinstance(item, dict)]
         return []
 
-    def get_open_orders(self, ticker: str) -> list[dict[str, Any]]:
-        symbol = _to_symbol(ticker)
+    def get_open_orders(self, ticker: str | None = None) -> list[dict[str, Any]]:
+        params = {"symbol": _to_symbol(ticker)} if ticker is not None else {}
         data = self._request_signed(
             "GET",
             "/fapi/v1/openOrders",
-            params={"symbol": symbol},
+            params=params,
         )
         if isinstance(data, list):
             return [item for item in data if isinstance(item, dict)]

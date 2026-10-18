@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import Mock
 
 from src.exchanges.binance.api_surface import API_SURFACE
 from src.exchanges.binance.binance_futures_rest import BinanceFuturesRest
@@ -8,6 +9,22 @@ from src.exchanges.binance.binance_spot_rest import BinanceSpotRest
 
 
 class BinanceApiSurfaceTest(unittest.TestCase):
+    def test_futures_open_orders_optional_symbol_preserves_named_call(self) -> None:
+        client = BinanceFuturesRest(api_key="fixture", secret_key="fixture")
+        client._request_signed = Mock(return_value=[{"orderId": "fixture"}])
+        self.assertEqual(client.get_open_orders(), [{"orderId": "fixture"}])
+        client._request_signed.assert_called_once_with("GET", "/fapi/v1/openOrders", params={})
+        client._request_signed.reset_mock()
+        self.assertEqual(client.get_open_orders("eth-usdt"), [{"orderId": "fixture"}])
+        client._request_signed.assert_called_once_with("GET", "/fapi/v1/openOrders", params={"symbol": "ETHUSDT"})
+
+    def test_futures_open_orders_failure_propagates_without_retry(self) -> None:
+        client = BinanceFuturesRest(api_key="fixture", secret_key="fixture")
+        client._request_signed = Mock(side_effect=TimeoutError("fixture timeout"))
+        with self.assertRaises(TimeoutError):
+            client.get_open_orders()
+        self.assertEqual(client._request_signed.call_count, 1)
+
     def test_surface_has_no_missing_entries(self) -> None:
         self.assertEqual(API_SURFACE["modules"]["spot_rest"]["missing"], {})
         self.assertEqual(API_SURFACE["modules"]["futures_rest"]["missing"], {})
