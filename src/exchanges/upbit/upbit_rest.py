@@ -536,6 +536,14 @@ class UpbitRest(ExchangeResponseMixin):
         except (TypeError, ValueError):
             return None
 
+    def get_orderbooks(self, tickers: list[str]) -> list[dict[str, Any]]:
+        if not tickers or len(tickers) > 100:
+            raise ValueError("orderbook batch must contain 1..100 markets")
+        data = self._public_request("GET", "/v1/orderbook", params={"markets": self._market_list(tickers), "count": 1})
+        if not isinstance(data, list):
+            raise UpbitRestError("Invalid orderbook batch response")
+        return data
+
     def get_orderbook_parse(self, ticker: str, *, count: int = 5) -> dict[str, Any]:
         if count <= 0:
             raise ValueError("count must be greater than 0")

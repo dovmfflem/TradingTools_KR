@@ -2,12 +2,14 @@
 
 import hashlib
 import os
+import re
 import sys
 import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlencode
 import uuid
+from decimal import Decimal, InvalidOperation
 
 os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
 
@@ -24,6 +26,33 @@ class BithumbRestError(ExchangeRequestError):
 
     def __init__(self, exchange: str, code: str | None = None, **metadata):
         super().__init__("bithumb", code or "LEGACY_RESPONSE_INVALID", **metadata)
+
+
+def _required_wallet_text(**values: Any) -> None:
+    for key, value in values.items():
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{key} is required")
+
+
+def _wallet_object(data: Any, *, mutation: bool = False) -> dict[str, Any]:
+    if not isinstance(data, dict) or not data:
+        raise BithumbRestError("bithumb", "INVALID_RESPONSE", outcome_unknown=mutation)
+    return data
+
+
+def _wallet_rows(data: Any) -> list[dict[str, Any]]:
+    if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):
+        raise BithumbRestError("bithumb", "INVALID_RESPONSE")
+    return data
+
+
+def _wallet_page(page: int | None, limit: int | None, order_by: str | None) -> None:
+    if page is not None and (type(page) is not int or page < 1):
+        raise ValueError("page must be a positive integer")
+    if limit is not None and (type(limit) is not int or not 1 <= limit <= 100):
+        raise ValueError("limit must be an integer from 1 to 100")
+    if order_by is not None and order_by not in {"asc", "desc"}:
+        raise ValueError("order_by must be asc or desc")
 
 
 def _strip_comment(line: str) -> str:
@@ -93,6 +122,13 @@ def _to_market_code(ticker: str) -> str:
     return f"{quote}-{base_coin}"
 
 
+def _validate_client_order_id(value: str | None) -> None:
+    if value is not None and (
+        not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,36}", value)
+    ):
+        raise ValueError("client_order_id must contain 1..36 ASCII letters, digits, '_' or '-'")
+
+
 class BithumbRest(ExchangeResponseMixin):
     def __init__(
         self,
@@ -112,6 +148,9 @@ class BithumbRest(ExchangeResponseMixin):
         self.api_url = api_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
         self._session = requests.Session()
+
+    def close(self) -> None:
+        self._session.close()
 
     @classmethod
     def from_info_yaml(cls, file_path: str = "info.yaml") -> "BithumbRest":
@@ -435,6 +474,14 @@ class BithumbRest(ExchangeResponseMixin):
         except (TypeError, ValueError):
             return None
 
+    def get_orderbooks(self, tickers: list[str]) -> list[dict[str, Any]]:
+        if not tickers or len(tickers) > 100:
+            raise ValueError("orderbook batch must contain 1..100 markets")
+        data = self._public_request("GET", "/v1/orderbook", params={"markets": self._market_list(tickers)})
+        if not isinstance(data, list):
+            raise BithumbRestError("Invalid orderbook batch response")
+        return data
+
     def get_orderbook_parse(self, ticker: str, *, count: int = 5) -> dict[str, Any]:
         if count <= 0:
             raise ValueError("count must be greater than 0")
@@ -481,6 +528,7 @@ class BithumbRest(ExchangeResponseMixin):
         *,
         client_order_id: str | None = None,
     ) -> dict[str, Any]:
+        _validate_client_order_id(client_order_id)
         if not uuid_value and not client_order_id:
             raise ValueError("uuid_value or client_order_id is required")
         data = self._request(
@@ -515,6 +563,8 @@ class BithumbRest(ExchangeResponseMixin):
             raise ValueError("limit must be greater than 0")
         if page is not None and page <= 0:
             raise ValueError("page must be greater than 0")
+        for client_order_id in client_order_ids or ():
+            _validate_client_order_id(client_order_id)
 
         params: dict[str, Any] = {
             "market": _to_market_code(ticker) if ticker else None,
@@ -548,21 +598,34 @@ class BithumbRest(ExchangeResponseMixin):
         price: str | float | int | None = None,
         volume: str | float | int | None = None,
         client_order_id: str | None = None,
+        time_in_force: str | None = None,
     ) -> dict[str, Any]:
         side_lower = side.lower()
         order_type_lower = order_type.lower()
 
         if side_lower not in {"bid", "ask"}:
             raise ValueError("side must be 'bid' or 'ask'")
-        if order_type_lower not in {"limit", "price", "market"}:
-            raise ValueError("order_type must be one of: limit, price, market")
+        if order_type_lower not in {"limit", "price", "market", "best"}:
+            raise ValueError("order_type must be one of: limit, price, market, best")
 
         market = _to_market_code(ticker)
+        _validate_client_order_id(client_order_id)
+        if time_in_force is not None:
+            if not isinstance(time_in_force, str) or time_in_force not in {"ioc", "fok", "post_only"}:
+                raise ValueError("time_in_force must be one of: ioc, fok, post_only")
+            if order_type_lower not in {"limit", "best"}:
+                raise ValueError("time_in_force is only supported for limit or best orders")
+            if not market.startswith("KRW-"):
+                raise ValueError("time_in_force is only supported for KRW markets")
+        if order_type_lower == "best" and time_in_force not in {"ioc", "fok"}:
+            raise ValueError("best order_type requires time_in_force ioc or fok")
+
         body: dict[str, Any] = {
             "market": market,
             "side": side_lower,
             "order_type": order_type_lower,
             "client_order_id": client_order_id,
+            "time_in_force": time_in_force,
         }
 
         if price is not None:
@@ -583,6 +646,11 @@ class BithumbRest(ExchangeResponseMixin):
                 raise ValueError("market order_type is for market sell(ask) only")
             if volume is None:
                 raise ValueError("market order_type requires volume")
+        elif order_type_lower == "best":
+            if side_lower == "bid" and price is None:
+                raise ValueError("best bid order requires price")
+            if side_lower == "ask" and volume is None:
+                raise ValueError("best ask order requires volume")
 
         data = self._request("POST", "/v2/orders", json_body=body)
         return data if isinstance(data, dict) else {"data": data}
@@ -593,6 +661,7 @@ class BithumbRest(ExchangeResponseMixin):
         *,
         client_order_id: str | None = None,
     ) -> dict[str, Any]:
+        _validate_client_order_id(client_order_id)
         if not order_id and not client_order_id:
             raise ValueError("order_id or client_order_id is required")
         data = self._request(
@@ -697,11 +766,9 @@ class BithumbRest(ExchangeResponseMixin):
 
     def get_accounts(self) -> list[dict[str, Any]]:
         data = self._request("GET", "/v1/accounts")
-        if isinstance(data, list):
-            return data
         if isinstance(data, dict) and isinstance(data.get("data"), list):
-            return data["data"]
-        return []
+            data = data["data"]
+        return _wallet_rows(data)
 
     def list_api_keys(self) -> list[dict[str, Any]]:
         data = self._request("GET", "/v1/api_keys")
@@ -711,12 +778,13 @@ class BithumbRest(ExchangeResponseMixin):
         return self._request("GET", "/v1/status/wallet")
 
     def get_withdraw_chance(self, *, currency: str, net_type: str | None = None) -> dict[str, Any]:
+        _required_wallet_text(currency=currency, net_type=net_type)
         data = self._request(
             "GET",
             "/v1/withdraws/chance",
             params={"currency": currency, "net_type": net_type},
         )
-        return data if isinstance(data, dict) else {"data": data}
+        return _wallet_object(data)
 
     def list_withdraw_addresses(
         self,
@@ -727,9 +795,10 @@ class BithumbRest(ExchangeResponseMixin):
         data = self._request(
             "GET",
             "/v1/withdraws/coin_addresses",
-            params={"currency": currency, "net_type": net_type},
         )
-        return data if isinstance(data, list) else []
+        return [row for row in _wallet_rows(data)
+                if (currency is None or row.get("currency") == currency)
+                and (net_type is None or row.get("net_type") == net_type)]
 
     def get_withdraw(
         self,
@@ -738,6 +807,7 @@ class BithumbRest(ExchangeResponseMixin):
         txid: str | None = None,
         currency: str | None = None,
     ) -> dict[str, Any]:
+        _required_wallet_text(currency=currency)
         if not uuid_value and not txid:
             raise ValueError("uuid_value or txid is required")
         data = self._request(
@@ -745,7 +815,7 @@ class BithumbRest(ExchangeResponseMixin):
             "/v1/withdraw",
             params={"uuid": uuid_value, "txid": txid, "currency": currency},
         )
-        return data if isinstance(data, dict) else {"data": data}
+        return _wallet_object(data)
 
     def list_coin_withdraws(
         self,
@@ -758,6 +828,7 @@ class BithumbRest(ExchangeResponseMixin):
         limit: int | None = None,
         order_by: str | None = None,
     ) -> list[dict[str, Any]]:
+        _wallet_page(page, limit, order_by)
         data = self._request(
             "GET",
             "/v1/withdraws",
@@ -771,7 +842,7 @@ class BithumbRest(ExchangeResponseMixin):
                 "order_by": order_by,
             },
         )
-        return data if isinstance(data, list) else []
+        return _wallet_rows(data)
 
     def list_krw_withdraws(
         self,
@@ -781,12 +852,13 @@ class BithumbRest(ExchangeResponseMixin):
         limit: int | None = None,
         order_by: str | None = None,
     ) -> list[dict[str, Any]]:
+        _wallet_page(page, limit, order_by)
         data = self._request(
             "GET",
             "/v1/withdraws/krw",
             params={"state": state, "page": page, "limit": limit, "order_by": order_by},
         )
-        return data if isinstance(data, list) else []
+        return _wallet_rows(data)
 
     def create_coin_withdraw(
         self,
@@ -797,7 +869,37 @@ class BithumbRest(ExchangeResponseMixin):
         address: str,
         secondary_address: str | None = None,
         transaction_type: str | None = None,
+        exchange_name: str | None = None,
+        receiver_type: str | None = None,
+        receiver_ko_name: str | None = None,
+        receiver_en_name: str | None = None,
+        receiver_corp_ko_name: str | None = None,
+        receiver_corp_en_name: str | None = None,
     ) -> dict[str, Any]:
+        _required_wallet_text(currency=currency, net_type=net_type, address=address)
+        try:
+            quantity = Decimal(str(amount))
+        except (InvalidOperation, ValueError):
+            raise ValueError("amount must be a positive finite decimal") from None
+        if not quantity.is_finite() or quantity <= 0:
+            raise ValueError("amount must be a positive finite decimal")
+        if transaction_type not in (None, "default"):
+            raise ValueError("Bithumb does not support a transaction_type request parameter")
+        if exchange_name is not None:
+            _required_wallet_text(exchange_name=exchange_name)
+        if receiver_type is not None:
+            if receiver_type not in {"personal", "corporation"}:
+                raise ValueError("receiver_type must be personal or corporation")
+            _required_wallet_text(exchange_name=exchange_name, receiver_ko_name=receiver_ko_name,
+                                  receiver_en_name=receiver_en_name)
+        elif any(v is not None for v in (receiver_ko_name, receiver_en_name,
+                                        receiver_corp_ko_name, receiver_corp_en_name)):
+            raise ValueError("receiver_type is required with receiver names")
+        if receiver_type == "corporation":
+            _required_wallet_text(receiver_corp_ko_name=receiver_corp_ko_name,
+                                  receiver_corp_en_name=receiver_corp_en_name)
+        elif receiver_corp_ko_name is not None or receiver_corp_en_name is not None:
+            raise ValueError("corporation names require receiver_type=corporation")
         data = self._request(
             "POST",
             "/v1/withdraws/coin",
@@ -807,10 +909,18 @@ class BithumbRest(ExchangeResponseMixin):
                 "amount": str(amount),
                 "address": address,
                 "secondary_address": secondary_address,
-                "transaction_type": transaction_type,
+                "exchange_name": exchange_name,
+                "receiver_type": receiver_type,
+                "receiver_ko_name": receiver_ko_name,
+                "receiver_en_name": receiver_en_name,
+                "receiver_corp_ko_name": receiver_corp_ko_name,
+                "receiver_corp_en_name": receiver_corp_en_name,
             },
         )
-        return data if isinstance(data, dict) else {"data": data}
+        result = _wallet_object(data, mutation=True)
+        if not result.get("uuid"):
+            raise BithumbRestError("bithumb", "INVALID_RESPONSE", outcome_unknown=True)
+        return result
 
     def create_krw_withdraw(
         self,
@@ -840,25 +950,28 @@ class BithumbRest(ExchangeResponseMixin):
         data = self._request(
             "GET",
             "/v1/deposits/coin_addresses",
-            params={"currency": currency, "net_type": net_type},
         )
-        return data if isinstance(data, list) else []
+        return [row for row in _wallet_rows(data)
+                if (currency is None or row.get("currency") == currency)
+                and (net_type is None or row.get("net_type") == net_type)]
 
     def get_deposit_address(self, *, currency: str, net_type: str | None = None) -> dict[str, Any]:
+        _required_wallet_text(currency=currency, net_type=net_type)
         data = self._request(
             "GET",
             "/v1/deposits/coin_address",
             params={"currency": currency, "net_type": net_type},
         )
-        return data if isinstance(data, dict) else {"data": data}
+        return _wallet_object(data)
 
     def create_deposit_address(self, *, currency: str, net_type: str | None = None) -> dict[str, Any]:
+        _required_wallet_text(currency=currency, net_type=net_type)
         data = self._request(
             "POST",
             "/v1/deposits/generate_coin_address",
             json_body={"currency": currency, "net_type": net_type},
         )
-        return data if isinstance(data, dict) else {"data": data}
+        return _wallet_object(data, mutation=True)
 
     def get_deposit(
         self,
@@ -867,6 +980,7 @@ class BithumbRest(ExchangeResponseMixin):
         txid: str | None = None,
         currency: str | None = None,
     ) -> dict[str, Any]:
+        _required_wallet_text(currency=currency)
         if not uuid_value and not txid:
             raise ValueError("uuid_value or txid is required")
         data = self._request(
@@ -874,7 +988,7 @@ class BithumbRest(ExchangeResponseMixin):
             "/v1/deposit",
             params={"uuid": uuid_value, "txid": txid, "currency": currency},
         )
-        return data if isinstance(data, dict) else {"data": data}
+        return _wallet_object(data)
 
     def list_coin_deposits(
         self,
@@ -887,6 +1001,7 @@ class BithumbRest(ExchangeResponseMixin):
         limit: int | None = None,
         order_by: str | None = None,
     ) -> list[dict[str, Any]]:
+        _wallet_page(page, limit, order_by)
         data = self._request(
             "GET",
             "/v1/deposits",
@@ -900,7 +1015,7 @@ class BithumbRest(ExchangeResponseMixin):
                 "order_by": order_by,
             },
         )
-        return data if isinstance(data, list) else []
+        return _wallet_rows(data)
 
     def list_krw_deposits(
         self,
@@ -910,12 +1025,13 @@ class BithumbRest(ExchangeResponseMixin):
         limit: int | None = None,
         order_by: str | None = None,
     ) -> list[dict[str, Any]]:
+        _wallet_page(page, limit, order_by)
         data = self._request(
             "GET",
             "/v1/deposits/krw",
             params={"state": state, "page": page, "limit": limit, "order_by": order_by},
         )
-        return data if isinstance(data, list) else []
+        return _wallet_rows(data)
 
     def create_krw_deposit(self, *, amount: str | float | int) -> dict[str, Any]:
         data = self._request(

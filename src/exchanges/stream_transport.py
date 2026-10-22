@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 
 PUBLIC_URLS = {
     "upbit": "wss://api.upbit.com/websocket/v1",
+    "bithumb": "wss://ws-api.bithumb.com/websocket/v1",
     "binance_futures": "wss://fstream.binance.com/stream?streams=",
 }
 PRIVATE_URLS = {
@@ -42,6 +43,58 @@ def open_public_stream(exchange, *, streams=None, connect=None):
         url += "/".join(streams)
     # Server-side Upbit public streams must not synthesize a browser Origin.
     return _connect(url, connect=connect, suppress_origin=exchange == "upbit")
+
+
+def spot_depth_quote(exchange, message, depth=5):
+    """Decode a DEFAULT/SIMPLE KRW book without inventing source freshness.
+
+    Returns {symbol, asks, bids, sourceTimestampMs}; levels use price/size.
+    Control/unrelated frames return None; rejected or invalid books raise.
+    The caller owns receive timestamps, socket lifecycle and reconnect policy.
+    """
+    import math
+    from .api_error import ExchangeRequestError, safe_code
+    from .public_orderbook import normalize_orderbook
+    from .spot_trading import decimal
+
+    if exchange not in {"upbit", "bithumb"}:
+        raise ValueError("unsupported spot depth exchange")
+    if isinstance(depth, bool) or not isinstance(depth, int) or not 1 <= depth <= 30:
+        raise ValueError("depth must be an integer in 1..30")
+    if not isinstance(message, dict):
+        return None
+    if message.get("error"):
+        raise ExchangeRequestError(exchange, safe_code(message))
+    if message.get("type", message.get("ty")) != "orderbook":
+        return None
+    market = message.get("code", message.get("cd"))
+    if not isinstance(market, str) or not re.fullmatch(r"KRW-[A-Z0-9]{1,20}", market):
+        return None
+    units = message.get("orderbook_units", message.get("obu"))
+    if not isinstance(units, list) or any(not isinstance(unit, dict) for unit in units):
+        raise ValueError("INVALID_BOOK_LEVELS")
+    normalize_orderbook(exchange, message, market, observed_at=0)
+
+    def levels(side, short, reverse):
+        rows = [{"price": float(unit.get(f"{side}_price", unit.get(f"{short}p"))),
+                 "size": float(unit.get(f"{side}_size", unit.get(f"{short}s")))} for unit in units]
+        if any(not math.isfinite(row["price"]) or not math.isfinite(row["size"]) or row["price"] <= 0 for row in rows):
+            raise ValueError("INVALID_BOOK_LEVEL")
+        active = sorted((row for row in rows if row["size"] > 0), key=lambda row: row["price"], reverse=reverse)
+        if not active:
+            raise ValueError("EMPTY_ORDERBOOK")
+        return active[:depth]
+
+    value = message.get("timestamp", message.get("tms"))
+    stamp = decimal(value) if value is not None else decimal(0)
+    # Match the shared normalizer's units, retaining exact milliseconds instead
+    # of round-tripping an epoch through float seconds.
+    if stamp > 100_000_000_000_000:
+        stamp /= 1000
+    elif stamp <= 100_000_000_000:
+        stamp *= 1000
+    return {"symbol": market[4:], "asks": levels("ask", "a", False), "bids": levels("bid", "b", True),
+            "sourceTimestampMs": max(0, int(stamp))}
 
 
 def _markets(markets):

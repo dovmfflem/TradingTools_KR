@@ -96,3 +96,39 @@ export function coinonePingMessage() {
 export function upbitDepthSubscription(codes, { ticket = "gridlab-overseas-arbitrage", format = "SIMPLE" } = {}) {
   return [{ ticket }, { type: "orderbook", codes }, { format }]
 }
+
+function requireSpotExchange(exchange) {
+  if (exchange !== "upbit" && exchange !== "bithumb") throw new Error("UNSUPPORTED_EXCHANGE")
+}
+
+export function spotDepthSubscription(exchange, codes) {
+  requireSpotExchange(exchange)
+  if (!Array.isArray(codes) || !codes.length || codes.length > 600 ||
+      Array.from(codes).some(code => typeof code !== "string" || !/^KRW-[A-Z0-9]{1,20}$/.test(code))) {
+    throw new Error("INVALID_MARKET_CODES")
+  }
+  const unique = [...new Set(codes)]
+  return upbitDepthSubscription(
+    unique.map(code => exchange === "upbit" ? `${code}.5` : code),
+    { format: "DEFAULT" },
+  )
+}
+
+// Top-of-book quotes only: do not fabricate quantities for the full-depth parser.
+export function spotDepthQuote(exchange, payload) {
+  requireSpotExchange(exchange)
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null
+  const type = payload.type ?? payload.ty
+  if (type !== undefined && type !== "orderbook") return null
+  const code = payload.code ?? payload.cd
+  if (typeof code !== "string" || !/^KRW-[A-Z0-9]{1,20}$/.test(code)) return null
+  const units = payload.orderbook_units ?? payload.obu
+  if (!Array.isArray(units) || !units.length) return null
+  const unit = units[0]
+  const bidValue = unit?.bid_price ?? unit?.bp
+  const askValue = unit?.ask_price ?? unit?.ap
+  if (![bidValue, askValue].every(value => typeof value === "number" || typeof value === "string")) return null
+  const bid = Number(bidValue), ask = Number(askValue)
+  if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask <= 0 || bid > ask) return null
+  return { symbol: code.slice(4), bid, ask }
+}

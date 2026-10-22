@@ -574,6 +574,12 @@ class BinanceFuturesRest:
             return [data]
         return []
 
+    def get_book_tickers(self) -> list[dict[str, Any]]:
+        data = self._request_public("GET", "/fapi/v1/ticker/bookTicker")
+        if not isinstance(data, list):
+            raise BinanceFuturesRestError("Invalid book ticker response")
+        return data
+
     def get_funding_info(self) -> list[dict[str, Any]]:
         data = self._request_public("GET", "/fapi/v1/fundingInfo")
         if isinstance(data, list):
