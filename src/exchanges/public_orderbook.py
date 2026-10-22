@@ -31,7 +31,7 @@ def subscription(exchange, market):
     return [{"ticket": str(uuid.uuid4())}, {"type": "orderbook", "codes": [market]}, {"format": "DEFAULT"}]
 
 
-def normalize_orderbook(exchange, message, market, *, observed_at):
+def normalize_orderbook(exchange, message, market, *, observed_at, include_depth=False):
     if isinstance(message, list):
         message = message[0] if message else {}
     if not isinstance(message, dict):
@@ -74,13 +74,21 @@ def normalize_orderbook(exchange, message, market, *, observed_at):
     ask, ask_size = best(asks, False)
     if ask < bid:
         raise ValueError("CROSSED_ORDERBOOK")
+    if include_depth and stamp is None:
+        raise ValueError("INVALID_BOOK_TIMESTAMP")
     stamp = decimal(stamp) if stamp is not None else decimal(observed_at)
     if stamp > 100_000_000_000_000:
         stamp /= 1_000_000
     elif stamp > 100_000_000_000:
         stamp /= 1000
-    return {"bid": exact(bid), "ask": exact(ask), "bid_size": exact(bid_size),
-            "ask_size": exact(ask_size), "timestamp": float(stamp), "received_at": observed_at}
+    result = {"bid": exact(bid), "ask": exact(ask), "bid_size": exact(bid_size),
+              "ask_size": exact(ask_size), "timestamp": float(stamp), "received_at": observed_at}
+    if include_depth:
+        for key, levels in (("bids", bids), ("asks", asks)):
+            result[key] = [{"price": exact(p), "quantity": exact(q)} for p, q in
+                           sorted(((decimal(p), decimal(q)) for p, q in levels if decimal(q) > 0),
+                                  reverse=key == "bids")[:10]]
+    return result
 
 
 def run_orderbook_stream(payload, *, emit, stop, record=None, connect=None, clock=time.monotonic, wall=time.time):
@@ -123,7 +131,7 @@ def run_orderbook_stream(payload, *, emit, stop, record=None, connect=None, cloc
                     raise ValueError("BOOK_SUBSCRIPTION_REJECTED")
                 if message.get("response_type", message.get("r")) == "PONG":
                     pong_deadline = None
-            quote = normalize_orderbook(exchange, message, market, observed_at=wall())
+            quote = normalize_orderbook(exchange, message, market, observed_at=wall(), include_depth=payload.get("includeDepth") is True)
             if quote:
                 last_book = clock()
                 if not ready:

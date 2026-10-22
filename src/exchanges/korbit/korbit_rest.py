@@ -102,6 +102,30 @@ class KorbitRest(ExchangeResponseMixin):
                                   retry_after_seconds=retry_after, rate_limit=remaining)
         return body.get("data")
 
+    def list_currencies(self):
+        return self.request("GET", "/v2/currencies", private=False)
+
+    def list_withdraw_addresses(self):
+        return self.request("GET", "/v2/coin/withdrawableAddresses", {"accountSeq": 1})
+
+    def get_withdraw_amount(self, currency):
+        return self.request("GET", "/v2/coin/withdrawableAmount", {"accountSeq": 1, "currency": currency.lower()})
+
+    def list_deposit_addresses(self):
+        return self.request("GET", "/v2/coin/depositAddresses", {"accountSeq": 1})
+
+    def get_withdraw(self, currency, withdrawal_id):
+        return self.request("GET", "/v2/coin/withdrawal", {"accountSeq": 1, "currency": currency.lower(), "coinWithdrawalId": withdrawal_id})
+
+    def list_deposits(self, currency):
+        return self.request("GET", "/v2/coin/recentDeposits", {"accountSeq": 1, "currency": currency.lower(), "limit": 100})
+
+    def create_coin_withdraw(self, *, currency, network, amount, address, secondary_address=""):
+        if not network or not address:
+            raise ValueError("WITHDRAW_DESTINATION_REQUIRED")
+        return self.request("POST", "/v2/coin/withdrawal", {"accountSeq": 1, "currency": currency.lower(),
+                            "network": network, "amount": str(amount), "address": address, "secondaryAddress": secondary_address})
+
     def get_tick_size_policy(self, symbol):
         return self.request("GET", "/v2/tickSizePolicy", {"symbol": symbol}, private=False)
 

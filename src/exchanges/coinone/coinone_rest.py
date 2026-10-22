@@ -170,7 +170,7 @@ class CoinoneRest(ExchangeResponseMixin):
 
     def _request(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
         self._clear_response()
-        mutation = path == "/v2.1/order" or path.startswith("/v2.1/order/cancel")
+        mutation = path in {"/v2.1/order", "/v2.1/transaction/coin/withdrawal"} or path.startswith("/v2.1/order/cancel")
         if mutation:
             reject_retrying_transport(self._session, f"{self.api_url}{path}")
         payload = {
@@ -423,7 +423,7 @@ class CoinoneRest(ExchangeResponseMixin):
     def get_deposit_address(self, currency: str) -> dict[str, Any]:
         return self._request(
             "/v2.1/account/deposit_address",
-            {"currency": currency.upper()},
+            {"currencies": [currency.upper()]},
         )
 
     def place_order(
@@ -642,7 +642,7 @@ class CoinoneRest(ExchangeResponseMixin):
             "/v2.1/transaction/coin/history",
             {
                 "currency": currency.upper() if currency else None,
-                "type": type_,
+                "is_deposit": None if type_ is None else type_.upper() == "DEPOSIT",
                 "size": size,
                 "from_ts": from_ts,
                 "to_ts": to_ts,
@@ -653,8 +653,8 @@ class CoinoneRest(ExchangeResponseMixin):
         if not transaction_id:
             raise ValueError("transaction_id is required")
         return self._request(
-            "/v2.1/transaction/coin",
-            {"transaction_id": transaction_id},
+            "/v2.1/transaction/coin/history/detail",
+            {"id": transaction_id},
         )
 
     def get_withdraw_limit(self, *, currency: str) -> dict[str, Any]:
@@ -665,7 +665,7 @@ class CoinoneRest(ExchangeResponseMixin):
 
     def list_withdraw_addresses(self, *, currency: str | None = None) -> dict[str, Any]:
         return self._request(
-            "/v2.1/transaction/coin/withdrawal/address",
+            "/v2.1/transaction/coin/withdrawal/address_book",
             {"currency": currency.upper() if currency else None},
         )
 
