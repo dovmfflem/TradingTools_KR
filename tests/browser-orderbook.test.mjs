@@ -18,7 +18,7 @@ function harness(exchange = "upbit") {
   class Socket extends EventTarget {
     constructor(url) { super(); this.url=url;this.readyState=0;this.sent=[];sockets.push(this) }
     open() { this.readyState=1;this.dispatchEvent(new Event("open")) }
-    send(frame) { this.sent.push(JSON.parse(frame)) }
+    send(frame) { this.sent.push(frame === "PING" ? frame : JSON.parse(frame)) }
     message(data,binary=false) { const text=JSON.stringify(data);this.dispatchEvent(new MessageEvent("message",{data:binary?new TextEncoder().encode(text).buffer:text})) }
     close() { if(this.readyState===3)return;this.readyState=3;this.dispatchEvent(new Event("close")) }
   }
@@ -34,13 +34,26 @@ test("four exchange public subscriptions deliver binary/text books immediately",
     h.close();assert.equal(h.timers.size,0)
   }
 })
-test("stale/closed feeds clear prices, late frames ignored and retries stop at three",()=>{
+test("quiet and disconnected feeds retain prices, late frames ignored and retries stop at three",()=>{
   const h=harness();h.sockets[0].open();h.sockets[0].message(h.frame())
-  h.advance(2000);assert.equal(h.books.at(-1),null);assert.equal(h.statuses.at(-1),"STALE")
+  const good=h.books.at(-1)
+  h.advance(2000);assert.equal(h.books.at(-1),good);assert.equal(h.statuses.at(-1),"HEALTHY")
+  h.advance(28000);h.sockets[0].message({status:"UP"});h.advance(19000)
+  assert.equal(h.books.at(-1),good);assert.equal(h.statuses.at(-1),"HEALTHY");assert.equal(h.sockets.length,1)
   h.sockets[0].close();h.advance(2000);assert.equal(h.sockets.length,2)
-  h.sockets[0].message(h.frame());assert.equal(h.books.at(-1),null)
+  h.sockets[0].message(h.frame());assert.equal(h.books.at(-1),good)
   h.sockets[1].close();h.advance(4000);h.sockets[2].close();h.advance(60000)
   assert.equal(h.sockets.length,3);assert.equal(h.timers.size,0);h.close()
+})
+test("all exchanges keep quiet books; heartbeat failure changes status without clearing prices",()=>{
+  for(const exchange of ["upbit","bithumb","coinone","korbit"]){
+    const h=harness(exchange), s=h.sockets[0];s.open();assert.equal(h.statuses.at(-1),"CONNECTED");s.message(h.frame())
+    const good=h.books.at(-1), interval=exchange==="coinone"?60000:30000
+    for(let n=0;n<3;n++) { h.advance(interval);s.message(exchange==="coinone"?{response_type:"PONG"}:{status:"UP"}) }
+    assert.equal(h.sockets.length,1);assert.equal(h.books.at(-1),good);assert.equal(h.statuses.at(-1),"HEALTHY")
+    if(exchange!=="korbit") {h.advance(interval+20000);assert.equal(h.statuses.at(-1),"TIMED_OUT");assert.equal(h.books.at(-1),good)}
+    h.close();assert.equal(h.timers.size,0)
+  }
 })
 test("handshake and first-book deadlines cleanly close the transport",()=>{
   const h=harness();h.advance(10000);assert.equal(h.sockets[0].readyState,3);h.close();assert.equal(h.timers.size,0)
@@ -51,6 +64,6 @@ test("mismatched market, out-of-order and invalid books cannot replace current p
   const h=harness();const s=h.sockets[0];s.open();s.message(h.frame());const good=h.books.at(-1)
   s.message({...h.frame(),code:"KRW-BTC"});assert.equal(h.books.at(-1),good)
   s.message({...h.frame(),timestamp:h.now()-1});assert.equal(h.books.at(-1),good)
-  s.message({...h.frame(),orderbook_units:[{bid_price:200,ask_price:100,bid_size:1,ask_size:1}]});assert.equal(h.books.at(-1),null)
+  s.message({...h.frame(),orderbook_units:[{bid_price:200,ask_price:100,bid_size:1,ask_size:1}]});assert.equal(h.books.at(-1),good);assert.equal(h.statuses.at(-1),"FAILED")
   h.close()
 })
