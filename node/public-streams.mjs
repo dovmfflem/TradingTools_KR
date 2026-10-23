@@ -1,8 +1,10 @@
 // Native Node entry point for public streams. Authentication stays in Python.
 // The owner manages subscription acknowledgement, heartbeat, reconnection and cleanup.
 // Each socket handshake has a 10s deadline; this entry point never retries.
-import { randomUUID } from "node:crypto"
 import { parseExchangeOrderbook } from "./orderbook-protocol.mjs"
+
+// Web Crypto keeps this public-only entry point usable in browsers as well as Node.
+const randomUUID = () => globalThis.crypto.randomUUID()
 
 export const PUBLIC_STREAMS = {
   binance_spot: { url: "wss://stream.binance.com:9443/ws", source: "binance-spot-websocket" },
