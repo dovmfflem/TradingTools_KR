@@ -2,7 +2,7 @@ import test, { after } from "node:test"
 import assert from "node:assert/strict"
 import { mkdirSync, writeFileSync } from "node:fs"
 import {
-  spotDepthSubscription, spotDepthQuote, upbitDepthSubscription, orderbookSubscriptions,
+  spotDepthSubscription, spotDepthSubscriptions, spotDepthQuote, upbitDepthSubscription, orderbookSubscriptions,
 } from "../node/public-streams.mjs"
 
 const evidence = []
@@ -80,6 +80,29 @@ test("legacy Upbit helper remains unchanged; new helper rejects unsupported exch
   assert.deepEqual(upbitDepthSubscription(["KRW-BTC"], { ticket: "custom", format: "DEFAULT" }), [
     { ticket: "custom" }, { type: "orderbook", codes: ["KRW-BTC"] }, { format: "DEFAULT" },
   ])
-  assert.throws(() => spotDepthSubscription("coinone", ["KRW-BTC"]), /UNSUPPORTED_EXCHANGE/)
-  assert.throws(() => spotDepthQuote("coinone", {}), /UNSUPPORTED_EXCHANGE/)
+  assert.throws(() => spotDepthSubscription("unknown", ["KRW-BTC"]), /UNSUPPORTED_EXCHANGE/)
+  assert.throws(() => spotDepthQuote("unknown", {}), /UNSUPPORTED_EXCHANGE/)
 })
+
+for (const exchange of ["coinone", "korbit"]) {
+  test(`${exchange}: native subscription and quote normalization`, () => {
+    const frames = spotDepthSubscriptions(exchange, ["KRW-XRP", "KRW-XRP", "KRW-P"])
+    assert.equal(frames.length, exchange === "coinone" ? 2 : 1)
+    if (exchange === "coinone") {
+      assert.deepEqual(frames.map(frame => frame.topic.target_currency), ["XRP", "P"])
+      assert.throws(() => spotDepthSubscription(exchange, ["KRW-XRP", "KRW-P"]), /MULTIPLE_SUBSCRIPTIONS_REQUIRED/)
+    } else assert.deepEqual(frames[0][0].symbols, ["xrp_krw", "p_krw"])
+    const data = { asks: [{ price: "101", qty: "2" }], bids: [{ price: "100", qty: "3" }] }
+    const payload = exchange === "coinone" ? { response_type: "DATA", channel: "ORDERBOOK",
+      data: { ...data, quote_currency: "KRW", target_currency: "XRP" } }
+      : { type: "orderbook", symbol: "xrp_krw", data }
+    assert.deepEqual(spotDepthQuote(exchange, payload), { symbol: "XRP", bid: 100, ask: 101 })
+    assert.equal(spotDepthQuote(exchange, {}), null)
+    assert.equal(spotDepthQuote(exchange, { ...payload, data: { ...payload.data, bids: [] } }), null)
+    assert.equal(spotDepthQuote(exchange, { ...payload, data: { ...payload.data, bids: [{ price: "102", qty: "3" }] } }), null)
+    assert.throws(() => spotDepthSubscriptions(exchange, ["BTC-XRP"]), /INVALID_MARKET_CODES/)
+    evidence.push({ exchange, api_category: "public", api_name: "spotDepthSubscriptions/spotDepthQuote",
+      method: "WebSocket synthetic", endpoint: "orderbook", request_parameters: { markets: ["KRW-XRP", "KRW-P"] },
+      captured_at: new Date().toISOString(), state: "HEALTHY", response: payload, subscriptions: frames })
+  })
+}

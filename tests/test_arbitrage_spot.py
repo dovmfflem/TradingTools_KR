@@ -80,7 +80,7 @@ class ArbitrageSpotTests(unittest.TestCase):
         self.assertIs(wrap_spot(" UPBIT ", self.upbit), self.upbit)
         self.assertIsInstance(wrap_spot(" BITHUMB ", self.raw), ArbitrageSpotAdapter)
         with self.assertRaises(ValueError):
-            wrap_spot("coinone", self.raw)
+            wrap_spot("unsupported", self.raw)
         self.raw._session.request.assert_not_called()
         self.upbit._session.request.assert_not_called()
 

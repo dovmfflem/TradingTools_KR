@@ -1,7 +1,9 @@
 """Korbit Open API v2. Secrets stay here; requests have no automatic retries.
 
 Reference: https://docs.digitalx.miraeasset.com/llms-full.txt (2026-09-25).
-Each HTTP request has a 3s connect/read timeout; the parent job has a 25s deadline.
+Default HTTP timeout is (3s connect, 3s read), configurable with a finite requests
+timeout. Explicit urllib3 total budgets include signing/time-sync overhead.
+The parent job still owns its absolute deadline.
 Signed calls never follow redirects or expose URLs/response bodies in errors.
 """
 from __future__ import annotations
@@ -16,6 +18,7 @@ from urllib.parse import urlencode
 
 import requests
 from ..api_error import ExchangeRequestError, ExchangeResponseMixin, response_metadata, reject_retrying_transport
+from ..arbitrage_timeout import bounded_timeout, after_signing
 
 BASE_URL = "https://api.digitalx.miraeasset.com"
 PRIVATE_WS_URL = "wss://ws-api.digitalx.miraeasset.com/v2/private"
@@ -26,11 +29,20 @@ class KorbitRestError(ExchangeRequestError):
 
 
 class KorbitRest(ExchangeResponseMixin):
-    def __init__(self, access, secret, *, session=None):
+    def __init__(self, access, secret, *, session=None, timeout_seconds=(3, 3)):
         self.access, self.secret = access, secret
         self._session = session or requests.Session()
         self._server_time = None
         self._synced_at = 0.0
+        self.timeout_seconds = timeout_seconds
+
+    @property
+    def timeout_seconds(self):
+        return self._timeout_seconds
+
+    @timeout_seconds.setter
+    def timeout_seconds(self, value):
+        self._timeout_seconds = bounded_timeout(value)
 
     def timestamp(self):
         if self._server_time is None or time.monotonic() - self._synced_at > 30:
@@ -53,12 +65,19 @@ class KorbitRest(ExchangeResponseMixin):
         return encoded + "&" + urlencode({"signature": signature})
 
     def request(self, method, path, params=None, *, private=True):
+        started = time.monotonic()
+        timeout = bounded_timeout(self.timeout_seconds)
         self._clear_response()
         if method in {"POST", "DELETE"}:
             reject_retrying_transport(self._session, BASE_URL + path)
         encoded = self.signed_params(params) if private else urlencode(params or {})
+        try:
+            timeout = after_signing(timeout, time.monotonic() - started)
+        except TimeoutError:
+            raise KorbitRestError("korbit", "TIMED_OUT", public_message="API_EXCHANGE_TIMED_OUT",
+                                  outcome_unknown=False) from None
         headers = {"X-KAPI-KEY": self.access} if private else {}
-        kwargs = {"headers": headers, "timeout": (3, 3), "allow_redirects": False}
+        kwargs = {"headers": headers, "timeout": timeout, "allow_redirects": False}
         if method == "POST":
             headers["Content-Type"] = "application/x-www-form-urlencoded"
             kwargs["data"] = encoded
@@ -134,6 +153,29 @@ class KorbitRest(ExchangeResponseMixin):
         if not re.fullmatch(r"[a-z0-9]+_[a-z0-9]+", symbol):
             raise ValueError("INVALID_MARKET")
         return self.request("GET", "/v2/orderbook", {"symbol": symbol}, private=False)
+
+    def get_candles(self, symbol, *, interval="1", start=None, end=None, limit=200):
+        """Public historical candles; native interval and epoch-ms boundaries.
+
+        Official reference: /llms-full.txt#get-_v2_candles (2026-10-23).
+        Native response timestamps identify candle starts, not receipt times.
+        """
+        symbol = str(symbol).strip().lower().replace("/", "_").replace("-", "_")
+        if not re.fullmatch(r"[a-z0-9]+_[a-z0-9]+", symbol):
+            raise ValueError("INVALID_MARKET")
+        if interval not in ("1", "5", "15", "30", "60", "240", "1D", "1W"):
+            raise ValueError("INVALID_CANDLE_INTERVAL")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise ValueError("CANDLE_LIMIT_MUST_BE_1_TO_200")
+        params = {"symbol": symbol, "interval": interval, "limit": limit}
+        for name, value in (("start", start), ("end", end)):
+            if value is not None:
+                if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 253402300799999:
+                    raise ValueError("INVALID_CANDLE_TIMESTAMP_MS")
+                params[name] = value
+        if start is not None and end is not None and end <= start:
+            raise ValueError("CANDLE_END_MUST_EXCEED_START")
+        return self.request("GET", "/v2/candles", params, private=False)
 
     def get_orderbook_parse(self, ticker, *, count=5):
         if isinstance(count, bool) or not isinstance(count, int) or count <= 0:

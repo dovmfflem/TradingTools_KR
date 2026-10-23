@@ -2,6 +2,7 @@
 // The owner manages subscription acknowledgement, heartbeat, reconnection and cleanup.
 // Each socket handshake has a 10s deadline; this entry point never retries.
 import { randomUUID } from "node:crypto"
+import { parseExchangeOrderbook } from "./orderbook-protocol.mjs"
 
 export const PUBLIC_STREAMS = {
   binance_spot: { url: "wss://stream.binance.com:9443/ws", source: "binance-spot-websocket" },
@@ -98,11 +99,30 @@ export function upbitDepthSubscription(codes, { ticket = "gridlab-overseas-arbit
 }
 
 function requireSpotExchange(exchange) {
-  if (exchange !== "upbit" && exchange !== "bithumb") throw new Error("UNSUPPORTED_EXCHANGE")
+  if (!["upbit", "bithumb", "coinone", "korbit"].includes(exchange)) throw new Error("UNSUPPORTED_EXCHANGE")
+}
+
+export function spotDepthSubscriptions(exchange, codes) {
+  requireSpotExchange(exchange)
+  if (!Array.isArray(codes) || !codes.length || codes.length > 600 ||
+      Array.from(codes).some(code => typeof code !== "string" || !/^KRW-[A-Z0-9]{1,20}$/.test(code))) {
+    throw new Error("INVALID_MARKET_CODES")
+  }
+  if (exchange === "upbit" || exchange === "bithumb") return [spotDepthSubscription(exchange, codes)]
+  const symbols = [...new Set(codes.map(code => code.slice(4)))]
+  if (exchange === "coinone") return symbols.map(symbol => ({ request_type: "SUBSCRIBE", channel: "ORDERBOOK",
+    topic: { quote_currency: "KRW", target_currency: symbol }, format: "DEFAULT" }))
+  return [[{ requestId: 1, method: "subscribe", type: "orderbook",
+    symbols: symbols.map(symbol => `${symbol.toLowerCase()}_krw`) }]]
 }
 
 export function spotDepthSubscription(exchange, codes) {
   requireSpotExchange(exchange)
+  if (exchange === "coinone" || exchange === "korbit") {
+    const messages = spotDepthSubscriptions(exchange, codes)
+    if (messages.length !== 1) throw new Error("MULTIPLE_SUBSCRIPTIONS_REQUIRED")
+    return messages[0]
+  }
   if (!Array.isArray(codes) || !codes.length || codes.length > 600 ||
       Array.from(codes).some(code => typeof code !== "string" || !/^KRW-[A-Z0-9]{1,20}$/.test(code))) {
     throw new Error("INVALID_MARKET_CODES")
@@ -117,6 +137,13 @@ export function spotDepthSubscription(exchange, codes) {
 // Top-of-book quotes only: do not fabricate quantities for the full-depth parser.
 export function spotDepthQuote(exchange, payload) {
   requireSpotExchange(exchange)
+  if (exchange === "coinone" || exchange === "korbit") {
+    const book = parseExchangeOrderbook(exchange, payload)
+    if (!book || !/^KRW-[A-Z0-9]{1,20}$/.test(book.market)) return null
+    const bid = book.bids[0]?.price, ask = book.asks[0]?.price
+    if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask <= 0 || bid > ask) return null
+    return { symbol: book.market.slice(4), bid, ask }
+  }
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null
   const type = payload.type ?? payload.ty
   if (type !== undefined && type !== "orderbook") return null
