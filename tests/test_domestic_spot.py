@@ -62,6 +62,22 @@ class SpotTests(unittest.TestCase):
         self.assertTrue(adapter.lookup("KRW-XRP", order_id=oid)["terminal"])
         self.assertEqual(len(calls), 2)
 
+    def test_explicit_limit_prices_preserve_exact_quantity_for_all_four(self):
+        for ex, cls, key in (("upbit", UpbitRest, "uuid"), ("bithumb", BithumbRest, "order_id"), ("coinone", CoinoneRest, "order_id"), ("korbit", KorbitRest, "orderId")):
+            c = create_autospec(cls, instance=True)
+            c.place_order.return_value = {key: "mock-limit"}
+            adapter = DomesticSpot(ex, c)
+            for side in ("buy", "sell"):
+                self.assertEqual(adapter.submit("KRW-USDT", side, "500", "da_limit_" + side, price="1400"), "mock-limit")
+                params = c.place_order.call_args.kwargs
+                self.assertEqual(params["order_type"], "limit")
+                self.assertEqual(params["price"], "1400")
+                self.assertEqual(params.get("volume", params.get("qty")), "500")
+                self.assertNotIn("amount", params)
+                self.captures.append(dict(exchange=ex, category="private-trading", api="exact-quantity-limit-order", method="POST",
+                    endpoint={"upbit":"/v1/orders","bithumb":"/v2/orders","coinone":"/v2.1/order","korbit":"/v2/orders"}[ex],
+                    parameters=params, state="PASSED", response={key:"mock-limit"}))
+
     def test_upbit_and_bithumb_null_volume_partial_cancel_exact_fill(self):
         for ex in ("upbit", "bithumb"):
             c = Mock()
